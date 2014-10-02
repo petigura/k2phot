@@ -84,6 +84,7 @@ import os
 import sys
 import warnings
 from multiprocessing import Pool
+import pdb
 
 import matplotlib
 matplotlib.use('Agg')  # Should allow plotting directly to files.
@@ -135,6 +136,7 @@ class baseObject:
         return 'baseObject'
 
 def main(argv=None):
+    # 2014-09-30 16:49 IJMC: Added default to xymeth
     np.set_printoptions(precision=3)
 
     if argv is None:
@@ -215,7 +217,7 @@ def main(argv=None):
         # Options governing how we fit for xys
         p.add_option('--gausscen', dest='gausscen', type='int',default=1,
                      help='Fit 2D gaussians for centroids? 1=yes,0=no')
-        p.add_option('--xymeth', dest='xymeth', type='str',
+        p.add_option('--xymeth', dest='xymeth', type='str', default='xcorr2D',
                      help='xcorr1D,xcorr2D,cent. If more than 1, choose best')
         
         # Define the time ranges to search over
@@ -251,7 +253,7 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
         p.add_option('--fs', '--fontsize', dest='fs', type='float', 
                      help='Font size for plots.', default=15)
 
-        options, args = p.parse_args()
+        options, args = p.parse_args(argv)
 
         print ""
         print "Running motion decorrelation on %s" % options.fn
@@ -279,6 +281,8 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
 
         tlimits = [tmin, tmax]
 
+        shift = [0, 0]
+
         if options.aper:
             xcen,ycen = get_star_pos(fn,mode='aper')
             pos_mode = 'aper'
@@ -297,13 +301,14 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
             frame0 = ma.median(frame0,axis=0)
             frame0.fill_value=0
             frame0= frame0.filled()
-            catcut = get_stars_pix(fn,frame0)
+            catcut, shift = get_stars_pix(fn,frame0)
             epic = headers[0]['KEPLERID']
             xcen,ycen = catcut.ix[epic]['pix0 pix1'.split()]
         else:
             xcen     = options.xcen
             ycen     = options.ycen
             pos_mode = 'manual'
+
 
         print "Using position mode %s, star is at pixels = [%.2f,%.2f]" % \
             (pos_mode,xcen,ycen)
@@ -358,7 +363,7 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
         to_fits(results,fitsfn)
 
     # Plot pretty pictures & print to disk:
-    plotPixelDecorResults(results, fs=fs)
+    plotPixelDecorResults(results, fs=fs, shift=shift)
     pdffn = savefile + '.pdf'
 
     tools.printfigs(pdffn, pdfmode=plotmode, verbose=verbose)
@@ -1418,7 +1423,7 @@ def detrendFluxArcMotion(time, flux, xys, nordGeneralTrend=None,
     """
     # 2014-08-27 20:06 IJMC: Created
     # 2014-09-08 14:48 IJMC: Added check in case xys is empty.
-
+    # 2014-09-30 17:04 IJMC: Fixed typo: sevel --> seval
 
     # Compute the arc lengths:
 
@@ -1524,7 +1529,7 @@ def detrendFluxArcMotion(time, flux, xys, nordGeneralTrend=None,
                     if (teval==0).any():  tevel[teval==0] = 1.
                     sfit = np.polyfit(s_norm[goodvals], (flux / teval)[goodvals], nord-1)
                     seval = np.polyval(sfit, s_norm)
-                    if (seval==0).any():  sevel[seval==0] = 1.
+                    if (seval==0).any():  seval[seval==0] = 1.
                     oldchi = newchi + 0.
                     newchi = ((flux - seval * teval)**2)[goodvals].sum()
                     dchi = oldchi - newchi
@@ -1583,24 +1588,29 @@ def detrendFluxArcMotion(time, flux, xys, nordGeneralTrend=None,
     return output
 
 
-def plot_label(image,catcut,epic,colorbar=True):
+def plot_label(image,catcut,epic,colorbar=True, shift=None):
+    # 2014-09-30 18:33 IJMC: Added shift option
     imshow2(image)
     if colorbar:
         py.colorbar(orientation='vertical')
 
     targstar = catcut.ix[epic]
+    if shift is None:
+        x0, x1 = 0, 0
+    else:
+        x0, x1 = shift[0:2]
 
     def label_stars(x,**kwargs):
-        py.text(x['pix0'],x['pix1'],'%(epic)09d, %(kepmag).1f' % x,**kwargs)
+        py.text(x['pix0']+x0,x['pix1']+x1,'%(epic)09d, %(kepmag).1f' % x,**kwargs)
 
-    py.plot(catcut['pix0'],catcut['pix1'],'oc')
+    py.plot(catcut['pix0']+x0,catcut['pix1']+x1,'oc')
     catcut.apply(lambda x : label_stars(x,color='c',size='x-small'),axis=1)
 
-    py.plot(targstar['pix0'],targstar['pix1'],'o',color='Tomato')
+    py.plot(targstar['pix0']+x0,targstar['pix1']+x1,'o',color='Tomato')
     label_stars(targstar,color='Tomato',size='x-small')
 
 
-def plotPixelDecorResults(input, fs=10):
+def plotPixelDecorResults(input, fs=10, shift=None):
     """Plot the results of a pixel-decorrelation run.
     
     :INPUTS:
@@ -1611,6 +1621,9 @@ def plotPixelDecorResults(input, fs=10):
       fs : positive scalar
         The font size.
 
+      shift : None or 2-sequence
+        Offset between WCS positions and data frame (in pixels) --
+        passed to :func:`plot_label`
     """
     # 2014-08-28 20:37 IJMC: Created
 
@@ -1693,19 +1706,19 @@ def plotPixelDecorResults(input, fs=10):
 
     if hasattr(input,'catcut'):
         py.sca(axL_im[0])
-        plot_label(input.medianFrame,input.catcut,input.epic)
+        plot_label(input.medianFrame,input.catcut,input.epic, shift=shift)
         py.title("Median Frame")
         py.sca(axL_im[1])    
         logframe = np.log10(input.medianFrame)
         logframe = ma.masked_invalid(logframe)
         logframe.fill_value=0
         logframe = logframe.filled()
-        plot_label(logframe,input.catcut,input.epic)
+        plot_label(logframe,input.catcut,input.epic, shift=shift)
         py.title("log10(Median Frame)")
 
     if input.apertureMode[0:4]=='circ':
         xy = list(input.loc)[::-1] # FLIP x and y
-        args =  xy + [input.apertures[0],]
+        args =  [xy[0]+shift[0], xy[1]+shift[1], input.apertures[0]]
         for i in range(2):
             py.sca(axL_im[i])
             tools.drawCircle(*args,color='lime', fill=False, linewidth=3)
@@ -1773,14 +1786,14 @@ def plotPixelDecorResults(input, fs=10):
     py.figure()
     ax1 = py.subplot(211, position=[.15, .45, .8, .45])
     py.plot(time, input.decorBaseline * input.decorMotion/f0, '-k')
-    py.plot(time, input.rawFlux/f0, 'oc', mec='k')
-    py.plot(time[input.noThrusterFiring], (input.rawFlux / input.decorMotion)[input.noThrusterFiring]/f0 - 8*input.rmsCleaned, 'o', mfc='orange', mec='k')
+    py.plot(time, input.rawFlux/f0, '.c', mec='k')
+    py.plot(time[input.noThrusterFiring], (input.rawFlux / input.decorMotion)[input.noThrusterFiring]/f0 - 8*input.rmsCleaned, '.', mfc='orange', mec='k')
     py.ylabel('Normalized Flux', fontsize=fs)
 
     py.title(titstr, fontsize=fs*1.2)
     ax2 = py.subplot(212, position=[.15, .1, .8, .3])
     py.plot(time[input.noThrusterFiring], 
-            input.cleanFlux[input.noThrusterFiring], 'o', mfc='lime')
+            input.cleanFlux[input.noThrusterFiring], '.', mfc='lime')
     py.plot(py.xlim(), [1,1], '--k')
     #ylim(1.-8*rms, 1.+8*rms)
     ax2.get_yaxis().set_major_formatter(py.FormatStrFormatter('%01.4f'))
@@ -2582,7 +2595,10 @@ def get_stars_pix(pixfn,frame):
     Return
     ------
     catcut : DataFrame with stars position in pixel coordinates
+    shift : shift between WCS and data frame (in pixels)
+
     """
+    # 2014-09-30 18:30 IJMC: Now output both catcut & shift
 
     catcut = query_stars_in_stamp(pixfn)
     
@@ -2614,7 +2630,8 @@ def get_stars_pix(pixfn,frame):
     epic = fits.open(pixfn)[0].header['KEPLERID']
     xcen,ycen = catcut.ix[epic]['pix0 pix1'.split()]
     print xcen,ycen
-    return catcut
+    return catcut, shift
+
 
 class gaussian:
     """

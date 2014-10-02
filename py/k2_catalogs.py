@@ -3,7 +3,14 @@ K2 Catalog
 
 Module for reading K2 catalogs and target lists.
 
-Catalogs must be in ${K2_DIR}/catalogs/
+Target catalogues must be in $K2PHOT_DIR/target_lists/ -- e.g.,
+  the file 'K2Campaign0targets.csv'
+
+Target Catalogs must be in ${K2_DIR}/catalogs/
+
+Example catalogues are found at
+  http://archive.stsci.edu/missions/k2/catalogs/
+
 """
 
 import os
