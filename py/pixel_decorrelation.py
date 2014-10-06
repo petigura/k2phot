@@ -365,7 +365,7 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
     py.close('all')
     return
 
-# Table with fits column description
+
 fits_col="""\
 "time","Time, BJD_TDB"
 "rawFlux","Raw aperture photometry"
