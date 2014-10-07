@@ -1849,7 +1849,7 @@ def lsqDecorHelperBin(flux, t_norm, s_norm, y_norm, goodvals, nord_s, nord_y, tn
     #sz = svecs[goodvals].mean(0)
     seval = np.ones(nobs)
     iter = 0
-    maxiter = 2000
+    maxiter = 200
     while np.abs(dchi)>0.1 and iter < maxiter:
         tbin, fbin, junk, junk = tools.errxy(t_norm[goodvals], (flux/seval)[goodvals], tnbins, xmode='mean', ymode='median')
         good = np.isfinite(tbin) * np.isfinite(fbin)
