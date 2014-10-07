@@ -126,3 +126,21 @@ def read_diag(k2_camp):
 
     dfdiag = pd.concat(dfdiag)
     return dfdiag
+
+def makePixelFileURL(epic, cycle, mode='K2'):
+    """Generate the URL for a particular target. 
+
+    :INPUTS:
+      epic : int
+        Target ID (analagous to "KIC" for Kepler Prime)
+
+      cycle : int
+        Cycle/Field number (analogous to Kepler's 'quarters')
+
+      mode : str
+        For now, only works in K2 mode.
+        """
+    # 2014-10-03 07:43 IJMC: Created
+
+    fmtstr = 'http://archive.stsci.edu/missions/k2/target_pixel_files/c%i/%i/%05i/ktwo%i-c%02i_lpd-targ.fits.gz' 
+    return fmtstr % (cycle, 1e5*np.floor(epic/1e5), np.floor((epic - 1e5*np.floor(epic/1e5))/1e3)*1e3, epic, cycle)
