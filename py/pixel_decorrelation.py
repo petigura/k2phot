@@ -2111,9 +2111,10 @@ def detrendFlux2DMotionBak(time, flux, xys, nordGeneralTrend=None,
 
 
 
-def plot_label(image,catcut,epic,colorbar=True, shift=None):
-    # 2014-09-30 18:33 IJMC: Added shift option
-    imshow2(image)
+def plot_label(image,catcut,epic,colorbar=True, shift=None, retim=False, cmap=None):
+    # 2014-09-30 18:33 IJMC: Added shift option.
+    # 2014-10-07 20:58 IJMC: Added 'retim' flag and 'cmap' option.
+    im = imshow2(image, cmap=cmap)
     if colorbar:
         py.colorbar(orientation='vertical')
 
@@ -2131,6 +2132,13 @@ def plot_label(image,catcut,epic,colorbar=True, shift=None):
 
     py.plot(targstar['pix0']+x0,targstar['pix1']+x1,'o',color='Tomato')
     label_stars(targstar,color='Tomato',size='x-small')
+
+    if retim:
+        ret = im
+    else:
+        ret = None
+
+    return ret
 
 
 def plotPixelDecorResults(input, fs=10, shift=None):
@@ -3179,7 +3187,7 @@ class gaussian:
 def imshow2(im,**kwargs):
     extent = None#(0,im.shape[0],0,im.shape[1])
 
-    if kwargs.has_key('cmap')==False:
+    if kwargs.has_key('cmap')==False or kwargs['cmap'] is None:
         kwargs['cmap'] = cm.gray 
 
     imshow(im,interpolation='nearest',origin='lower',
