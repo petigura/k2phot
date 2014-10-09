@@ -21,8 +21,8 @@ from astropy.coordinates import Longitude,Latitude
 import numpy as np
 import sqlite3
 
-k2cat_sqlfile = '%(K2PHOT_DIR)s/k2_catalogs.sqlite' % os.environ
-k2cat_h5file = '%(K2PHOT_DIR)s/k2_catalogs.h5' % os.environ
+k2cat_sqlfile = '%(K2PHOTFILES)s/catalogs/k2_catalogs.sqlite' % os.environ
+k2cat_h5file = '%(K2PHOTFILES)s/catalogs/k2_catalogs.h5' % os.environ
 
 def make_cat(k2_camp='C0'):
     """
