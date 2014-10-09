@@ -93,7 +93,6 @@ def read_cat(k2_camp='C0',return_targets=True):
     ----------
     k2_camp : K2 Campaign 
     """
-
     cat = pd.read_hdf(k2cat_h5file,k2_camp)
     if return_targets:
         cat = cat[cat.target]
