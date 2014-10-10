@@ -8,11 +8,11 @@ something fancier, try PyRAF, DAOPHOT, etc.
 from numpy import array, sign, pi, nan, arange
 import numpy as np
 import pdb
-#try:
-#    import psyco
-#    psyco.full()
-#except ImportError:
-#    print 'Psyco not installed, the program will just run slower'
+try:
+    import _chi2
+    c_chisq = True
+except:
+    c_chisq = False
 
 class phot:
     def __init__(self, **kw):
@@ -1025,38 +1025,94 @@ def aperphot(fn, timekey=None, pos=[0,0], dap=[2,4,6], mask=None, verbose=False,
 
     return thisobs
 
-def psffiterr(xyoffset, psf, frame, w=None, scale=100, dframe=9, verbose=False):
-    """ Usage:
-          optimize.fmin_powell(psffiterr, [0,0], args=(psf, stack[6],goodind[6],100,13),xtol=0.5,ftol=1)
+def psffiterr(xyoffset, psf, frame, w=None, scale=100, dframe=9, loc=None, verbose=False, retvec=False):
+    """:USAGE:
+         ::
+
+          fit = optimize.fmin(psffiterr, [0,0], args=(psf, frame,weights,100,13, loc),xtol=0.5,ftol=1, full_output=True)
+
+          modelout = psffit(psf, frame, loc, weights, scale=100, dframe=13, xoffs=[fit[0][0]], yoffs=[fit[0][1]])
           """
     # 2009-11-13 11:27 IJC: Created
-    from numpy import round
-    import pdb
-    out = psffit(psf, frame, loc=None, w=w, scale=scale, dframe=dframe, \
-                     xoffs=[round(xyoffset[0])], yoffs=[round(xyoffset[1])], verbose=verbose)
-    sumsqres = out[2][0,0]
-    #pdb.set_trace()
-    return sumsqres
+    # 2014-09-04 08:32 IJMC: Changed 'round' to 'np.round'
+    # 2014-10-08 18:26 IJMC: Added 'retvec' option (for scipy.optimize.leastsq)
 
-def psffit(psf, frame, loc=None, w=None, scale=100, dframe=9, xoffs=range(0,100,10), yoffs=range(0,100,10), verbose=False):
+    out = psffit(psf, frame, loc=loc, w=w, scale=scale, dframe=dframe, \
+                     xoffs=[(xyoffset[0])], yoffs=[(xyoffset[1])], verbose=verbose, retvec=retvec)
+    if retvec:
+        ret = out
+    else:
+        ret = out[2][0,0]
+
+    return ret
+
+def psffit(psf, frame, loc=None, w=None, scale=100, dframe=9, xoffs=None, yoffs=None, verbose=False, retvec=False):
     """
-    INPUT:
-       psf -- model PSF (supersampled by 'scale')
+    Conduct simple PRF model-fitting at a specified grid of positions
+
+    :INPUTS:
+       psf -- model PSF (or PRF), supersampled by factor 'scale'
+
        frame -- science frame to which psf will be fit. best if it's odd-sized
        
-    OPTIONAL INPUTS:
+    :OPTIONS:
        loc -- (x,y) integers, star location in data frame (e.g., data[x,y])
+
        w -- [array] weights of pixels in data frame, (typ. 1/sigma^2)
+
        scale -- supersampling level of PSF
-       dframe -- [odd int] diameter of square box around target location
+
+       dframe -- [odd int] diameter of square box around target
+                 location. Errors may occur if this size is larger
+                 than your binned-down PRF model.
+
        xoffs -- [int array] subpixel x offsets to test.  
+
        yoffs -- [int array] subpixel y offsets to test.  
+
+    :RETURNS:
+      modelpsf, data, chisq, background, fluxscale, xoffset, yoffset, chisq[ii,jj],background[ii,jj], fluxscale[ii,jj]
+
+    :EXAMPLE:
+      ::
+      
+        import k2
+        import phot
+        import pylab as py
+
+        fn = 'kplr060018142-2014044044430_lpd-targ.fits'
+        f = pyfits.open('kplr060018142-2014044044430_lpd-targ.fits')
+        image = f[1].data['flux'][0]
+        prf = k2.loadPRF(fn)
+        out = phot.psffit(prf, image, (33, 23), scale=50, dframe=7, verbose=True)
+
+        py.figure()
+        py.subplot(132)
+        py.imshow(out[0])
+        py.title('Best-fit Model PRF')
+        py.colorbar()
+        py.subplot(131)
+        py.imshow(out[1])
+        py.title('Observed Data')
+        py.clim([out[0].min(), out[0].max()])
+        py.colorbar()
+        py.subplot(133)
+        py.imshow(out[1] - out[0])
+        py.title('Data - Model')
+        py.colorbar()
+
     """
     # 2009-10-07 14:18 IJC: Created.
     # 2011-05-11 22:16 IJC: Added a try/except/pdb debugging step
-    from numpy import arange, prod, zeros,vstack,dot, nonzero, diag,floor,abs,max,hstack
-    from numpy.linalg import pinv
-    from analysis import binarray
+    # 2014-09-04 08:32 IJMC: Moderate overhaul!  Updated
+    #                        documentation, changed numpy function
+    #                        calls to 'np.X', replaced np.nonzero()
+    #                        call with simple centroid.
+    # 2014-10-08 18:26 IJMC: Added 'retvec' option (for scipy.optimize.leastsq)
+
+    #from numpy import arange, prod, zeros,vstack,dot, nonzero, diag,floor,abs,max,hstack
+    #from numpy.linalg import pinv
+    import analysis as an
     from time import time
     import pdb
 
@@ -1064,19 +1120,18 @@ def psffit(psf, frame, loc=None, w=None, scale=100, dframe=9, xoffs=range(0,100,
 
     
     if w==None:
-        w = zeros(frame.shape)+1
+        w = np.zeros(frame.shape)+1
     if loc==None:
         loc = ((frame.shape[1]-1)/2,(frame.shape[0]-1)/2)
     if xoffs==None:
-        xoffsets = arange(scale) #arange(scale)
+        xoffs = np.arange(scale) #arange(scale)
     if yoffs==None:
-        yoffs = arange(scale) #arange(scale)
+        yoffs = np.arange(scale) #arange(scale)
 
     ycen = int(loc[0])
     xcen = int(loc[1])
-    pycen, pxcen = nonzero(psf==psf.max())
     # Pick a thumbnail frame size to use, and cut it out of the larger frame
-    if verbose:
+    if verbose>0:
         print "frame.shape>>", frame.shape
         print "(xcen, ycen, dframe)>>", xcen,ycen,dframe
         print "limits>>" , (ycen-(dframe-1)/2.), (ycen+(dframe+1)/2.), (xcen-(dframe-1)/2.), (xcen+(dframe+1)/2.)
@@ -1085,37 +1140,50 @@ def psffit(psf, frame, loc=None, w=None, scale=100, dframe=9, xoffs=range(0,100,
                  (xcen-(dframe-1)/2.):(xcen+(dframe+1)/2.)]
     weights = w[(ycen-(dframe-1)/2.):(ycen+(dframe+1)/2.), 
                  (xcen-(dframe-1)/2.):(xcen+(dframe+1)/2.)]
-    wmat = diag(weights.ravel())
+    wmat = np.diag(weights.ravel())
 
-    extrasize = 2*max(abs(floor(1.0*hstack((xoffs,yoffs))/scale)))
-    exs = extrasize*scale/2
-    if verbose: print "extrasize>> ",extrasize
+    extrasize = 2*max(np.abs(np.floor(1.0*np.hstack((xoffs,yoffs))/scale)))
+    exs = 2*scale*dframe #extrasize*scale/2
+    if verbose>0: print "extrasize>> ",extrasize
 
-    # Determine how much of the PSF to cut out, and cut it out
+    # Determine how much of the PSF to cut out, and cut it out. If it
+    # is too small, then zero-pad it.
     dpsf0 = (dframe+1)*scale-1
     dpsf1 = dframe*scale-1
-    pxmin = int(pxcen-(dpsf0-1)/2-exs)
-    pxmax = int(pxcen+(dpsf0+1)/2+exs)
-    pymin = int(pycen-(dpsf0-1)/2-exs)
-    pymax = int(pycen+(dpsf0+1)/2+exs)
-    if verbose: print psf.shape, pymin, pymax, pxmin, pxmax
+    psfModelTooSmall = True
+    while psfModelTooSmall:
+        psf_x, psf_y = np.arange(psf.shape[0]), np.arange(psf.shape[1])
+        pycen = (psf_x*psf.sum(1)).sum()/psf.sum()
+        pxcen = (psf_y*psf.sum(0)).sum()/psf.sum()
+        #pycen, pxcen = (psf==psf.max()).nonzero()  # Slower!!
+        pxmin = int(pxcen-(dpsf0-1)/2-exs)
+        pxmax = int(pxcen+(dpsf0+1)/2+exs)
+        pymin = int(pycen-(dpsf0-1)/2-exs)
+        pymax = int(pycen+(dpsf0+1)/2+exs)
+        if verbose>0: print "shape & indices>>", psf.shape, pymin, pymax, pxmin, pxmax
+        if pxmin<0 or pymin<0 or pxmax>=psf.shape[1] or pymax>=psf.shape[0]:
+            psfModelTooSmall = True
+            psf = an.pad(psf, 2*psf.shape[0], 2*psf.shape[1])
+        else:
+            psfModelTooSmall = False
+        
+
     smpsf = psf[pymin:pymax, pxmin:pxmax]
 
-    if verbose: print "data.shape>>" , data.shape
-    ndata = prod(data.shape)
-    if verbose: print "ndata>> %i" % ndata
-    const = zeros(ndata,float)+1
-    background = zeros((len(xoffs),len(yoffs)), float)
-    fluxscale =  zeros((len(xoffs),len(yoffs)), float)
-    chisq = zeros((len(xoffs),len(yoffs)), float)
-    if verbose: 
+    if verbose>0: print "data.shape>>" , data.shape
+    ndata = data.size
+    if verbose>0: print "ndata>> %i" % ndata
+    const = np.zeros(ndata,float)+1
+    background = np.zeros((len(xoffs),len(yoffs)), float)
+    fluxscale =  np.zeros((len(xoffs),len(yoffs)), float)
+    chisq = np.zeros((len(xoffs),len(yoffs)), float)
+    if verbose>0: 
         print "wmat.shape>>", wmat.shape
         print "data.ravel().shape>>", data.ravel().shape
 
-    wpmat = dot(wmat, data.ravel()) # outside of loop for efficiency
-    dfs = dframe * scale            # outside of loop for efficiency
-    initoffset_min = scale - 1 + exs    # outside of loop for efficiency
-    initoffset_max = scale - 1 + exs + dfs    # outside of loop for efficiency
+    dfs = dframe * scale                  
+    initoffset_min = scale - 1 + exs      
+    initoffset_max = scale - 1 + exs + dfs
     nx = len(xoffs)
     ny = len(yoffs)
     rangeny = range(ny)
@@ -1127,25 +1195,38 @@ def psffit(psf, frame, loc=None, w=None, scale=100, dframe=9, xoffs=range(0,100,
             yoffset = yoffs[jj]
             ymin, ymax = int(initoffset_min-yoffset), int(initoffset_max-yoffset)
             #   Bin down the PSF by the correct factor.  Sizes should now match!
-            binpsf = binarray(smpsf[ymin:ymax, xmin:xmax],scale)
+            #pdb.set_trace()
+            #binpsf = an.binarray(smpsf[ymin:ymax, xmin:xmax],scale)
+            binpsfs = [an.binarray(smpsf[ymin:ymax, xmin:xmax],scale), \
+                       an.binarray(smpsf[ymin+1:ymax+1, xmin:xmax],scale), \
+                       an.binarray(smpsf[ymin:ymax, xmin+1:xmax+1],scale), \
+                       an.binarray(smpsf[ymin+1:ymax+1, xmin+1:xmax+1],scale)]
+            xfrac, yfrac = xoffset - int(xoffset), yoffset - int(yoffset)
+            binpsf_weights = [(1. - xfrac)*(1.-yfrac), yfrac*(1.-xfrac), (1.-yfrac)*xfrac, xfrac*yfrac]
+            binpsf = np.array([bp*bpw for bp, bpw in zip(binpsfs, binpsf_weights)]).sum(0) / np.sum(binpsf_weights)
+            #pdb.set_trace()
             #   Compute the best-fit background & PSF scaling factor
-            if verbose:
+            if verbose>0:
                 print "xmat shapes>> ",const.shape, binpsf.ravel().shape
                 print "ymin,ymax,xmin,xmax>> ",ymin,ymax, xmin,xmax
                 print "binpsf.shape>> ",binpsf.shape
             try:
-                xmat = vstack((const,binpsf.ravel())).transpose()
-                wxmat = dot(wmat,xmat)
-                fitvec = dot(pinv(wxmat), wpmat) 
+                xmat = np.vstack((const,binpsf.ravel())).transpose()
+                fitvec, efitvec = an.lsq(xmat, data.ravel(), w=weights.ravel())
                 background[ii,jj], fluxscale[ii,jj] = fitvec
-                chisq[ii,jj] = ((dot(wxmat, fitvec) - wpmat)**2).sum()
+                if retvec:
+                    return np.sqrt(weights.ravel()) * (np.dot(xmat, fitvec) - data.ravel())
+                if c_chisq:
+                    chisq[ii,jj] = _chi2.chi2(np.dot(xmat, fitvec), data.ravel(), weights.ravel())
+                else:
+                    chisq[ii,jj] = (weights.ravel() * (np.dot(xmat, fitvec) - data.ravel())**2).sum()
             except:
                 print "error occurred"
                 chisq[ii,jj] = 9e99
                 pdb.set_trace()
                 
 
-    ii,jj = nonzero(chisq==chisq.min())
+    ii,jj = (chisq==chisq.min()).nonzero()
     if len(ii)>1: # more than one chisquared minimum found!
         ii = ii[0]
         jj = jj[0]
@@ -1154,10 +1235,10 @@ def psffit(psf, frame, loc=None, w=None, scale=100, dframe=9, xoffs=range(0,100,
     yoffset = yoffs[jj]
     ymin, ymax = int(scale-yoffset-1+exs), int(scale-yoffset-1 + dfs+exs)
     #   Bin down the PSF by the correct factor.  Sizes should now match!
-    binpsf = binarray(smpsf[ymin:ymax, xmin:xmax],scale)
-    modelpsf = background[ii,jj]+fluxscale[ii,jj]*binpsf
+    binpsf = an.binarray(smpsf[ymin:ymax, xmin:xmax],scale)
+    modelpsf = background[ii,jj] + fluxscale[ii,jj]*binpsf
     #print "%f seconds for completion!" % (time()-tic)
-    return modelpsf, data, chisq, background, fluxscale, xoffset, yoffset, chisq[ii,jj],background[ii,jj], fluxscale[ii,jj]
+    return modelpsf, data, chisq, background, fluxscale, xoffset, yoffset, xoffs, yoffs, chisq[ii,jj],background[ii,jj], fluxscale[ii,jj]
 
 
 
