@@ -1588,7 +1588,7 @@ def detrendFluxArcMotion(time, flux, xys, nordGeneralTrend=None,
                         tbin, fbin, junk, junk = tools.errxy(t_norm[goodvals], (flux/seval)[goodvals], tnbins, xmode='mean', ymode='median')
                         good = np.isfinite(tbin) * np.isfinite(fbin)
                         teval = np.interp(t_norm, tbin[good], fbin[good])
-                    if (teval==0).any():  tevel[teval==0] = 1.
+                    if (teval==0).any():  teval[teval==0] = 1.
                     sfit = np.polyfit(s_norm[goodvals], (flux / teval)[goodvals], nord-1)
                     seval = np.polyval(sfit, s_norm)
                     if (seval==0).any():  seval[seval==0] = 1.
@@ -1859,7 +1859,7 @@ def lsqDecorHelperBin(flux, t_norm, s_norm, y_norm, goodvals, nord_s, nord_y, tn
         tbin, fbin, junk, junk = tools.errxy(t_norm[goodvals], (flux/seval)[goodvals], tnbins, xmode='mean', ymode='median')
         good = np.isfinite(tbin) * np.isfinite(fbin)
         teval = np.interp(t_norm, tbin[good], fbin[good])
-        if (teval==0).any():  tevel[teval==0] = 1.
+        if (teval==0).any():  teval[teval==0] = 1.
         sfit, junk = an.lsq(allvecs.T[goodvals], (flux / teval)[goodvals], checkvals=False)
         seval = np.dot(sfit, allvecs)
         if (seval==0).any():  seval[seval==0] = 1.

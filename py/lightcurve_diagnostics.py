@@ -9,6 +9,11 @@ The main, 'driver' function is :func:`plotDiagnostics`, but many other
 functions can be called individually.
 """
 
+import pixel_decorrelation
+import analysis as an
+import tools
+import phot
+
 import numpy as np
 import pylab as py
 import sys
@@ -17,10 +22,6 @@ from mpl_toolkits.axes_grid1 import make_axes_locatable
 from astropy.io import fits as pyfits
 import pdb
 
-import analysis as an
-import tools
-import pixel_decorrelation
-import phot
 
 def computeCentroids(data, edata, mask):
     """Compute centroid time series.
@@ -343,28 +344,35 @@ def plotDiagnostics(lcFits, lcPickle, pixFile, transitModel, fontsize=14, medFil
         import lightcurve_diagnostics as ld
         from astropy.io import fits as pyfits
         import atpy
+        import os
+        import numpy as np
 
-        cand = atpy.Table('/Users/ianc/proj/mdwarfs/kepler2/cycle0/C0-cand_v0.1_status.csv', type='ascii')
+        _home = os.path.expanduser('~')
+        cand = atpy.Table(_home+'/proj/mdwarfs/kepler2/cycle0/C0_10-10_planet-candidates_status_v2.csv', type='ascii')
         field = 0
-        _pix = '/Users/ianc/proj/transit/kepler/data/'
-        _proc = '/Users/ianc/proj/transit/kepler/proc/'
+        _pix = _home+'/proj/transit/kepler/data/'
+        _proc = _home+'/proj/transit/kepler/proc/c0_v2/'
 
         ii = 10
-        epic = cand.epic[ii]
-        tt, per = 2454833+cand.t0[ii], cand.P[ii], 
-        depth, edepth = cand.depth[ii], cand.depth[ii]/cand.s2n[ii]
-        t14 = cand.t14_hr[ii]/24.
+        if cand.fit_b[ii]<0.99:
+            epic = cand.starname[ii]
+            tt, per = 2454833+cand.t0[ii], cand.P[ii], 
+            depth, edepth = cand.fit_p[ii]**2, (cand.fit_p[ii]**2)/30
+            tau, b = cand.fit_tau[ii], cand.fit_b[ii]
+            rsa = 2*np.pi*tau/per
+            tani = 1./(b*rsa)
+            t14 = (per/np.pi) * np.arcsin(rsa * np.sqrt((1+depth**0.5)**2 - b**2) / np.sin(np.arctan(tani)))
+            if not np.isfinite(t14): t14 = tau
 
-        pixfn = _pix + 'ktwo%i-c%02i_lpd-targ.fits' % (epic, field)
-        procfn = _proc + '%i.fits' % epic
-        procpickle = _proc + '%i.pickle' % epic
+            pixfn = _pix + 'ktwo%i-c%02i_lpd-targ.fits' % (epic, field)
+            procfn = _proc + 'new%i.fits' % epic
+            procpickle = _proc + 'new%i.pickle' % epic
 
-        time = pyfits.getdata(procfn).time
-        inTransit = np.abs((time-tt + per/2.) % per - per/2) < (t14/2.)
-        poorTransitModel = (1./depth - inTransit) * depth
+            time = pyfits.getdata(procfn).time
+            inTransit = np.abs((time-tt + per/2.) % per - per/2) < (t14/2.)
+            poorTransitModel = (1./depth - inTransit) * depth
 
-        fig, axs = ld.plotDiagnostics(procfn, procpickle, pixfn, poorTransitModel, medFiltWid=47, tt=tt, per=per, t14=t14, depth=depth, edepth=edepth)
-        axs[2].set_title(epic)
+            fig, axs = ld.plotDiagnostics(procfn, procpickle, pixfn, poorTransitModel, medFiltWid=47, tt=tt, per=per, t14=t14, depth=depth, edepth=edepth)
 
     """
     # 2014-10-03 13:29 IJMC: Created
@@ -398,7 +406,7 @@ def plotDiagnostics(lcFits, lcPickle, pixFile, transitModel, fontsize=14, medFil
     c1, c2, ec1, ec2 = computeCentroids(data, edata, input.crudeApertureMask)
     index = input.noThrusterFiring
     if depth is not None and edepth is not None:
-        coffset1, e_coffset1, coffset2, e_coffset2 = centroidSourceOffset(\
+        coffset1, e_coffset1, coffset2, e_coffset2, mean_out1, e_mean_out1, mean_out2, e_mean_out2 = centroidSourceOffset(\
             time[index], input.cleanFlux[index], transitModel[index], \
                 c1[index], c2[index], ec1[index], ec2[index], depth, edepth, \
                 medFiltWid=47, rescaleErrors=True, \
@@ -413,22 +421,27 @@ def plotDiagnostics(lcFits, lcPickle, pixFile, transitModel, fontsize=14, medFil
     fig, ax2 = plotLightCurves(input.time[index], input.cleanFlux[index], inTransit=inTransit[index], fontsize=fontsize, medFiltWid=medFiltWid, per=per, fig=fig, figpos=[0.0, 0.04, .8, 0.4])
     axs.append(ax2)
 
+
     fig, ax34 = cloudPlot(c1[index], c2[index], dat.cleanFlux[index], inTransit[index], e_cen1=ec1[index], e_cen2=ec2[index], time=time[index], fig=fig, figpos=[0.02, 0.4, 0.35, 0.6], fontsize=fontsize*0.65, medFiltWid=medFiltWid)
     axs = axs + list(ax34)
-    if depth is not None and edepth is not None:
-        axs[3].text(.5, .9, '%1.1e +/- %1.1e' % (coffset1, e_coffset1), color='b', horizontalalignment='center', fontsize=fontsize*0.4*(1.+(np.abs(coffset1/e_coffset1)>3)), transform=axs[3].transAxes, weight='bold')
-        axs[3].text(.5, .8, '%1.1e +/- %1.1e' % (coffset2, e_coffset2), color='r', horizontalalignment='center', fontsize=fontsize*0.4*(1.+(np.abs(coffset2/e_coffset2)>3)), transform=axs[3].transAxes, weight='bold')
+    axs[2].set_title(input.epic)
+
 
     #pdb.set_trace()
     #x vs dat.x
     diffImage, e_diffImage, inImage, e_inImage, outImage, e_outImage = \
         constructDiffImage(time, data, transitModel, per, edata=edata, \
-                               posx=c1, posy=c2, shift='scipy1', \
+                               posx=c1, posy=c2, shift='reg', \
                                retall=True, empiricalErrors=False)
     fig, ax5678, caxs = plotDiffImages(diffImage, e_diffImage, inImage, outImage, input.crudeApertureMask, catcut=input.catcut, epic=input.epic, figpos=[0.37, 0.4, 0.4, 0.5], fig=fig, cmap=py.cm.cubehelix, conCol='r', fontsize=fontsize*0.8)
     axs = axs + ax5678
 
     fig, ax9 = plotPixelTransit(input, data, transitModel, mask=np.ones(data.shape[1:]), figpos=[.65, 0, .35, .35], fig=fig, fontsize=fontsize*0.8)
+    if np.abs(coffset1/e_coffset1)>3 or np.abs(coffset2/e_coffset2)>3:
+        ax9.plot([mean_out2, mean_out2+coffset2], [mean_out1, mean_out1+coffset1], '.r-')
+        axs[3].text(.5, .9, '%1.1e +/- %1.1e' % (coffset1, e_coffset1), color='b', horizontalalignment='center', fontsize=fontsize*0.8, transform=axs[3].transAxes, weight='bold')
+        axs[3].text(.5, .8, '%1.1e +/- %1.1e' % (coffset2, e_coffset2), color='r', horizontalalignment='center', fontsize=fontsize*0.8, transform=axs[3].transAxes, weight='bold')
+
     axs.append(ax9)
 
     return fig, axs
@@ -464,31 +477,31 @@ def computeCentroidTransit(time, flux, transitModel, cen1, cen2, ecen1, ecen2, m
     # Decorrelate spacecraft-induced motion from centroid-motion fit:
     mostlyJunk = pixel_decorrelation.getArcLengths(time, [(cen1, cen2)], retmodXY=True)
     cen1model, cen2model = mostlyJunk[-1][0]
-    cen1corrected = cen1 - cen1model
-    cen2corrected = cen2 - cen2model
+    cen1corrected = cen1 - cen1model + cen1model.mean()
+    cen2corrected = cen2 - cen2model + cen2model.mean()
 
     mean_cen1 = (cen1corrected)[transitModel==1].mean()
     mean_cen2 = (cen2corrected)[transitModel==1].mean()
-    deltaCen1 = cen1corrected  - mean_cen1
-    deltaCen2 = cen2corrected  - mean_cen2
+    #deltaCen1 = cen1corrected  - mean_cen1
+    #deltaCen2 = cen2corrected  - mean_cen2
 
     # Appropriately pre-whiten the centroids and transit model; 
     #    normalize the latter:
-    filtDeltaCen1 = signal.medfilt(deltaCen1, medFiltWid)
-    filtDeltaCen2 = signal.medfilt(deltaCen2, medFiltWid)
+    filtDeltaCen1 = cen1corrected / signal.medfilt(cen1corrected, medFiltWid) - 1.
+    filtDeltaCen2 = cen2corrected / signal.medfilt(cen2corrected, medFiltWid) - 1.
     filtTransitModel = transitModel / signal.medfilt(transitModel, medFiltWid) - 1.
-    filtTransitModel /= filtTransitModel.std()
+    #filtTransitModel /= filtTransitModel.std()
 
     # Eq. 4:
-    gamma1 = ((deltaCen1 - filtDeltaCen1) * filtTransitModel / ecen1**2).sum() / \
+    gamma1 = ((filtDeltaCen1) * filtTransitModel / ecen1**2).sum() / \
         ((filtTransitModel/ecen1)**2).sum()
-    gamma2 = ((deltaCen2 - filtDeltaCen2) * filtTransitModel / ecen2**2).sum() / \
+    gamma2 = ((filtDeltaCen2) * filtTransitModel / ecen2**2).sum() / \
         ((filtTransitModel/ecen2)**2).sum()
 
     if rescaleErrors:
-        chi1 = (((deltaCen1 - filtDeltaCen1 - gamma1*filtTransitModel) / ecen1)**2).sum()
+        chi1 = (((filtDeltaCen1 - gamma1*filtTransitModel) / ecen1)**2).sum()
         ecen1 *= np.sqrt(chi1 / ecen1.size)
-        chi2 = (((deltaCen2 - filtDeltaCen2 - gamma2*filtTransitModel) / ecen2)**2).sum()
+        chi2 = (((filtDeltaCen2 - gamma2*filtTransitModel) / ecen2)**2).sum()
         ecen2 *= np.sqrt(chi2 / ecen1.size)
     
 
@@ -509,9 +522,9 @@ def computeCentroidTransit(time, flux, transitModel, cen1, cen2, ecen1, ecen2, m
 
     #print shift_distance, e_shift_distance, e_shift_distance0
 
-    ell_1 = ((deltaCen1 - filtDeltaCen1) * filtTransitModel).sum() / \
+    ell_1 = ((filtDeltaCen1) * filtTransitModel).sum() / \
         (egamma1 * np.sqrt((filtTransitModel**2).sum()))
-    ell_2 = ((deltaCen2 - filtDeltaCen2) * filtTransitModel).sum() / \
+    ell_2 = ((filtDeltaCen2) * filtTransitModel).sum() / \
         (egamma2 * np.sqrt((filtTransitModel**2).sum()))
 
     #print ell_1, ell_2
@@ -574,7 +587,7 @@ def computePixelTransit(input, data, transitModel, medFiltWid=47, rescaleErrors=
 
     # Appropriately pre-whiten and normalize the transit model:
     filtTransitModel = transitModel / signal.medfilt(transitModel, medFiltWid) - 1.
-    filtTransitModel /= filtTransitModel.std()
+    #filtTransitModel /= filtTransitModel.std()
     denom = (filtTransitModel**2).sum()
     sqrtvec = np.ones(nobs) / np.sqrt(nobs)
     for irow in xrange(nrow):
@@ -620,16 +633,16 @@ def centroidSourceOffset(time, flux, transitModel, cen1, cen2, ecen1, ecen2, dep
     if cen1model is None or cen2model is None:
         mostlyJunk = pixel_decorrelation.getArcLengths(time, [(cen1, cen2)], retmodXY=True)
         cen1model, cen2model = mostlyJunk[-1][0]
-    cen1corrected = cen1 - cen1model
-    cen2corrected = cen2 - cen2model
-    filtcen1 = signal.medfilt(cen1corrected, medFiltWid)
-    filtcen2 = signal.medfilt(cen2corrected, medFiltWid)
+    cen1corrected = cen1 - cen1model + cen1model.mean()
+    cen2corrected = cen2 - cen2model + cen2model.mean()
+    #filtcen1 = signal.medfilt(cen1corrected, medFiltWid)
+    #filtcen2 = signal.medfilt(cen2corrected, medFiltWid)
 
     # Compute centroids in, out, and global:
     mean_cen1, e_mean_cen1, mean_cen1_out, e_mean_cen1_out, mean_cen1_in, e_mean_cen1_in, sdom_mean_cen1_in = \
-        computeMeanCentroids(cen1corrected - filtcen1, ecen1, inTransit)
+        computeMeanCentroids(cen1corrected, ecen1, inTransit)
     mean_cen2, e_mean_cen2, mean_cen2_out, e_mean_cen2_out, mean_cen2_in, e_mean_cen2_in, sdom_mean_cen2_in = \
-        computeMeanCentroids(cen2corrected - filtcen2, ecen2, inTransit)
+        computeMeanCentroids(cen2corrected, ecen2, inTransit)
 
     # Compute centroid-shift distance:
     shift_distance, e_shift_distance, gamma1, egamma1, \
@@ -644,12 +657,17 @@ def centroidSourceOffset(time, flux, transitModel, cen1, cen2, ecen1, ecen2, dep
     offset2 = dilution * gamma2
 
     # Now Eq. 11:
-    eoffset1 = np.sqrt(dilution**2 * (e_mean_cen1_in**2 + e_mean_cen1_out**2)  + \
-        (gamma1 * edepth)**2 / depth**4  + e_mean_cen1**2)
-    eoffset2 = np.sqrt(dilution**2 * (e_mean_cen2_in**2 + e_mean_cen2_out**2)  + \
-        (gamma2 * edepth)**2 / depth**4  + e_mean_cen2**2)
+    ## Full equations:
+    #eoffset1 = np.sqrt(dilution**2 * (e_mean_cen1_in**2 + e_mean_cen1_out**2)  + \
+    #    (gamma1 * edepth)**2 / depth**4  + e_mean_cen1**2)
+    #eoffset2 = np.sqrt(dilution**2 * (e_mean_cen2_in**2 + e_mean_cen2_out**2)  + \
+    #    (gamma2 * edepth)**2 / depth**4  + e_mean_cen2**2)
 
-    return offset1, eoffset1, offset2, eoffset2
+    ## Equations for simplified analysis:
+    eoffset1 = egamma1 * dilution
+    eoffset2 = egamma2 * dilution
+
+    return offset1, eoffset1, offset2, eoffset2, mean_cen1_out, e_mean_cen1_out, mean_cen2_out, e_mean_cen2_out, 
 
 
 def indexInOutTransit(time, transitModel, period, nbuffer=3, inDepthFrac=0.75, depth=None, cadence=None):
@@ -839,7 +857,8 @@ def constructDiffImage(time, data, transitModel, period, edata=None, posx=None, 
         If None, no shifting is done.
 
       shift : str or None
-        Mode to use for re-shifting images.  See :func:`shiftImages`
+        Mode to use for re-shifting images.  See :func:`shiftImages`,
+        or input 'reg' for :func:`image_registration.register_images`
 
         None -- no shifting is done. With K2, this means your images
             will look *noisy*!
@@ -856,14 +875,26 @@ def constructDiffImage(time, data, transitModel, period, edata=None, posx=None, 
 
     """
     # 2014-10-07 17:14 IJMC: Created
+    # 2014-10-15 13:46 IJMC: Added option for shift='reg'
     nobs = time.size
     inTran, preTran, postTran = indexInOutTransit(time, transitModel, period)
 
-    if posx is not None and posy is not None and shift is not None:
+    if (posx is not None and posy is not None) or shift is not None:
         xm = posx - posx.mean()
         ym = posy - posy.mean()
-        data = shiftImages(data, xm, ym, shift=shift)
-        if edata is not None:  edata = shiftImages(edata, xm, ym, shift=shift)
+        if shift.lower().find('reg')==0:
+            data0 = data.copy()
+            dmean = data0.mean(0)
+            xnew, ynew = np.zeros(nobs), np.zeros(nobs)
+            for ii, frame in enumerate(data0):
+                xnew[ii], ynew[ii], data[ii] = pixel_decorrelation.register_images(\
+                    dmean, frame, usfac=100, return_registered=True)
+                data[ii] = np.fft.fftshift(data[ii])
+
+            #data = shiftImages(data0, xnew-xnew.mean(), ynew-ynew.mean(), shift='fft') 
+        else:
+            data = shiftImages(data, xm, ym, shift=shift)
+            if edata is not None:  edata = shiftImages(edata, xm, ym, shift=shift)
 
 
     inImage = data[inTran].sum(0) / inTran.sum()
@@ -1042,7 +1073,7 @@ def fitPRF2Image(image, e_image, pixfn, loc, targApDiam, ngrid=100, retfull=Fals
     mod = phot.psffit(prf, image, loc, weights, scale=sampling, dframe=dframe, xoffs=[fit[0][0]], yoffs=[fit[0][1]], verbose=True)
     if retfull:
         fit = fit + mod
-    pdb.set_trace()
+
     return fit
 
 def plotPixelTransit(*args, **kwargs):
@@ -1103,7 +1134,7 @@ def plotPixelTransit(*args, **kwargs):
     cb = py.colorbar(im, cax=cax) #, format='%1.1e')
 
     #cb = py.colorbar(im, ax=ax)
-    im.set_clim([lolim, hilim])
+    im.set_clim([0, hilim])
     ax.contour(input.crudeApertureMask, [0.5], linewidths=2, colors='g')
     
     all_tick_labels = ax.get_xticklabels() + ax.get_yticklabels() + \
