@@ -1171,7 +1171,6 @@ def subpix_reg_stack(stack, maxoff=2):
     # All frame except the first (reference frame) get padded
     stack.mask[:] = False
     stack.mask[1:,maxoff:-maxoff,maxoff:-maxoff] = False
-
     stack.fill_value=0
     stack = stack.filled()
     
@@ -2637,6 +2636,17 @@ def imshow2(im,**kwargs):
 
     imshow(im,interpolation='nearest',origin='lower',
            extent=extent,**kwargs)
+
+
+def log10scale(im):
+    """
+    Scales an image to log10. Sets nans and any value < 1 to 0
+    """
+    im = np.log10(im)
+    im = ma.masked_invalid(im)
+    im.mask = im.mask | (im < 0)
+    im.fill_value = 0 
+    return im.filled()
 
 if __name__ == "__main__":
     sys.exit(main())
