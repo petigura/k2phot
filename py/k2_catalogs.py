@@ -106,12 +106,26 @@ def read_cat(k2_camp='C0',return_targets=True):
 
     return cat
 
-def read_diag(k2_camp):
+def read_diag(k2_camp,nbin=20):
     """
-    Query the catalog for 20 stars in a given magnitude range
+    Read Diagnostic Stars
+
+    Query the catalog for nbin stars with different magnitude ranges
+
+    Parameters
+    ----------
+    k2_camp : string with campaign name
+    nbin : number of stars to return for a given magnitude range
+
+    Returns
+    -------
+    dfdiag : DataFrame with subset of catalog used for diagnostics
+
+    Usage
+    -----
+    
     """
     np.random.seed(0)
-    nbin = 20
     cat = read_cat(k2_camp=k2_camp)
 
     dfdiag = []
@@ -127,20 +141,3 @@ def read_diag(k2_camp):
     dfdiag = pd.concat(dfdiag)
     return dfdiag
 
-def makePixelFileURL(epic, cycle, mode='K2'):
-    """Generate the URL for a particular target. 
-
-    :INPUTS:
-      epic : int
-        Target ID (analagous to "KIC" for Kepler Prime)
-
-      cycle : int
-        Cycle/Field number (analogous to Kepler's 'quarters')
-
-      mode : str
-        For now, only works in K2 mode.
-        """
-    # 2014-10-03 07:43 IJMC: Created
-
-    fmtstr = 'http://archive.stsci.edu/missions/k2/target_pixel_files/c%i/%i/%05i/ktwo%i-c%02i_lpd-targ.fits.gz' 
-    return fmtstr % (cycle, 1e5*np.floor(epic/1e5), np.floor((epic - 1e5*np.floor(epic/1e5))/1e3)*1e3, epic, cycle)
