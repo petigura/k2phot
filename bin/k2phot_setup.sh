@@ -10,7 +10,7 @@ STARNAME_LIST=$1 # Name of the parameter database
 #PHOTDIR=${K2_DIR}/photometry/C0/
 #K2_SCRIPTS=${K2_DIR}/code/py/scripts
 
-read -ep "Enter pixel file directory: " PIXEL_DIR
+read -ep "Enter pixel file directory" PIXEL_DIR
 
 # Generate a list of starnames
 find ${PIXEL_DIR} -name "*.fits" |
