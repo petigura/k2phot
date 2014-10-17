@@ -1,22 +1,23 @@
 """
 Routines that solve for the flat-field
 """
-import numpy as np
-from numpy import ma
-
-import photutils
-from matplotlib import pylab as plt
-from pixel_decorrelation import imshow2,get_star_pos,loadPixelFile,get_stars_pix,subpix_reg_stack
-from scipy import optimize
-import pandas as pd
-from pdplus import LittleEndian as LE
 import cPickle as pickle
 from argparse import ArgumentParser
-import photometry
-from matplotlib.pylab import *
 import copy
 import os.path
+
+import numpy as np
+from numpy import ma
+from scipy import optimize
+from matplotlib import pylab as plt
+import pandas as pd
 from astropy.io import fits
+from photutils import CircularAperture,aperture_photometry
+
+import h5plus
+from pdplus import LittleEndian as LE
+import photometry
+from pixel_decorrelation import imshow2,get_star_pos,loadPixelFile,get_stars_pix,subpix_reg_stack
 
 class ImageStack(object):
     def __init__(self,fn,tlimits=None):
@@ -102,13 +103,14 @@ class FlatField(ImageStack):
         cad = pd.DataFrame(dict(cad=self.cad))
         cad['cadbin'] = -1
         n_cad_per_bin = 50 
-        cad_split = np.array_split(cad,len(cad)/n_cad_per_bin)
-        for cad in cad_split:
-            cad['cadbin'] = cad.iloc[0]['cad']
-        cad = pd.concat(cad_split)
+        idxL = np.array(cad.index)
+        idxL = np.array_split(idxL,len(idxL)/n_cad_per_bin)
+        for idx in idxL:
+            cad.ix[idx,'cadbin'] = cad.ix[idx].iloc[0]['cad']
+
         self.dfcad = cad
 
-        self.aperture = ('circular', radius)  
+        self.radius = radius
 
         # Option to mask out points for figure of merit
         self.fmask = np.zeros(self.nframe).astype(bool)
@@ -148,9 +150,9 @@ class FlatField(ImageStack):
         for i in range(self.nframe):
             locxy = self.get_aper_locxy(i)
             frame = self.flux[i]
+            apertures = CircularAperture([locxy], r=self.radius)
 
-            fluxtable, aux_dict = photutils.aperture_photometry(
-                frame,locxy,self.aperture,mask=self.mask)
+            fluxtable = aperture_photometry(frame, apertures, mask=self.mask)
             f_non_weighted[i] = fluxtable[0][0]
         return f_non_weighted
 
@@ -175,7 +177,7 @@ class FlatField(ImageStack):
         for i in range(self.nweights):
             r,c = self.pixels[i]
             plt.text(c,r,i,va='center',ha='center',color='Orange')
-        ap = photutils.CircularAperture(aperlocxy,r=self.aperture[1])
+        ap = CircularAperture(aperlocxy,r=self.aperture[1])
         ap.plot(color='Lime',lw=1.5,alpha=0.5)
 
     def get_fpix(self):
@@ -273,11 +275,14 @@ class FlatField(ImageStack):
         hduL.writeto(filename,clobber=True)
         print "saveing to %s" % filename
 
-import h5plus
 cadmaskfile = os.path.join(os.environ['K2PHOTFILES'],'C0_fmask.csv')
 cadmask = pd.read_csv(cadmaskfile,index_col=0)
 
 if __name__ == "__main__":
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pylab as plt
+
     p = ArgumentParser(description='Photometry By Flat-Fielding')
     p.add_argument('pixelfile',type=str)
     p.add_argument('outdir',type=str)
@@ -302,7 +307,6 @@ if __name__ == "__main__":
     ffm.set_fmask(cadmask['fmask'])
     
     np.set_printoptions(precision=4)
-    fig,axL = subplots(nrows=1,sharex=True,sharey=True,figsize=(12,2))
 
     methods = 'mad std bin-med-std'.split()
     method = methods[2]
@@ -318,11 +322,7 @@ if __name__ == "__main__":
 
     fluxes = [f_old,f_weighted,f_weighted_masked]
     how = 'original weighted weighted_masked'.split()
-    for f,how in zip(fluxes,how):
-        plot(f,label='(%s)' % (how))
 
-    legend(fontsize='x-small')
-    
     basename = str(fits.open(ff.fn)[0].header['KEPLERID'])
     basename = os.path.join(outdir,basename)
 
@@ -335,10 +335,15 @@ if __name__ == "__main__":
     ff.to_fits(basename+'.ff.%s.fits'  % method)
     ffm.to_fits(basename+'.ffm.%s.fits'  % method)
 
-    fig.set_tight_layout(True)
-    gcf().savefig(basename+'.ff.png')
+    fig,axL = plt.subplots(nrows=1,sharex=True,sharey=True,figsize=(12,2))
+    for f,how in zip(fluxes,how):
+        plt.plot(f,label='(%s)' % (how))
+    plt.legend(fontsize='x-small')
     
-    figure()
+    fig.set_tight_layout(True)
+    plt.gcf().savefig(basename+'.ff.png')
+    
+    plt.figure()
     ffm.plot_frame(0)
-    title(basename+'.ff-frame.png')
+    plt.title(basename+'.ff-frame.png')
 

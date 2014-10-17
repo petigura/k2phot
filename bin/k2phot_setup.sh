@@ -39,10 +39,12 @@ echo "Pixel files exist for ${N_PIX_EXTANT}/${N_STARS} stars requested"
 for starname in `cat pixel_starname_join.temp`
 do
     PIXEL_FILE=$(grep ${starname} pixelfiles.temp)
+    PIXEL_FILE2=${OUTPUTDIR}/${starname}.ffm.bin-med-std.fits
     echo "# K2_PHOT #"
     echo ". $HOME/k2_setup.sh"
     echo "cd $K2_DIR"
-    echo "python ${K2PHOT_DIR}/code/py/pixel_decorrelation.py -f ${PIXEL_FILE} --wcs=1 -r 4 --minrad=2 --maxrad=8 --verbose=1 --gausscen=0 --plotmode=gs --tmin=1940 --output=pobj,fits --xymeth=xcorr2D --decor=2D --gentrend=-1.5 -s ${OUTPUTDIR}"
+    echo "python ${K2PHOT_DIR}/code/py/flatfield.py ${PIXEL_FILE} ${OUTPUTDIR} --tmin=1940"
+    echo "python ${K2PHOT_DIR}/code/py/pixel_decorrelation.py -f ${PIXEL_FILE2} --wcs=1 -r 4 --minrad=3 --maxrad=7 --verbose=1 --gausscen=0 --plotmode=gs --tmin=1940 --xymeth=xcorr2D --gentrend=-1.5 --output=pobj,fits -s ${OUTPUTDIR}"
     echo "chmod o+rX ${OUTPUTDIR}/${STARNAME}*"
 done > ${SCRIPTSDIR}/k2phot.tot
 rm *.temp
