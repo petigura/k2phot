@@ -3,7 +3,14 @@ K2 Catalog
 
 Module for reading K2 catalogs and target lists.
 
-Catalogs must be in ${K2_DIR}/catalogs/
+Target catalogues must be in $K2PHOT_DIR/target_lists/ -- e.g.,
+  the file 'K2Campaign0targets.csv'
+
+Target Catalogs must be in ${K2_DIR}/catalogs/
+
+Example catalogues are found at
+  http://archive.stsci.edu/missions/k2/catalogs/
+
 """
 
 import os
@@ -13,7 +20,6 @@ from astropy import units as u
 from astropy.coordinates import Longitude,Latitude
 import numpy as np
 import sqlite3
-
 
 k2cat_sqlfile = '%(K2PHOTFILES)s/catalogs/k2_catalogs.sqlite' % os.environ
 k2cat_h5file = '%(K2PHOTFILES)s/catalogs/k2_catalogs.h5' % os.environ
@@ -119,3 +125,21 @@ def read_diag(k2_camp):
 
     dfdiag = pd.concat(dfdiag)
     return dfdiag
+
+def makePixelFileURL(epic, cycle, mode='K2'):
+    """Generate the URL for a particular target. 
+
+    :INPUTS:
+      epic : int
+        Target ID (analagous to "KIC" for Kepler Prime)
+
+      cycle : int
+        Cycle/Field number (analogous to Kepler's 'quarters')
+
+      mode : str
+        For now, only works in K2 mode.
+        """
+    # 2014-10-03 07:43 IJMC: Created
+
+    fmtstr = 'http://archive.stsci.edu/missions/k2/target_pixel_files/c%i/%i/%05i/ktwo%i-c%02i_lpd-targ.fits.gz' 
+    return fmtstr % (cycle, 1e5*np.floor(epic/1e5), np.floor((epic - 1e5*np.floor(epic/1e5))/1e3)*1e3, epic, cycle)

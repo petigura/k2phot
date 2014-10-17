@@ -74,7 +74,7 @@ below.
   2014-09-08 EAP: Minor fixes to xcorr algorithm
   2014-09-19 EAP: Center aperture by registering against the catalog
   2014-09-19 EAP: Can define apertures manually.
- 
+  2014-10-06 14:10 IJMC: Added 1D vs. 2D decorrelation method.
 """
 
 # Import standard Python modules:
@@ -84,6 +84,7 @@ import os
 import sys
 import warnings
 from multiprocessing import Pool
+import pdb
 
 import matplotlib
 matplotlib.use('Agg')  # Should allow plotting directly to files.
@@ -135,6 +136,7 @@ class baseObject:
         return 'baseObject'
 
 def main(argv=None):
+    # 2014-09-30 16:49 IJMC: Added default to xymeth
     np.set_printoptions(precision=3)
 
     if argv is None:
@@ -192,9 +194,13 @@ def main(argv=None):
         p.add_option('-r', '--resamp', dest='resamp', type='int', 
                      help='Resampling factor for partial-pixel photometry.', 
                      default=1)
-        p.add_option('-g', '--gentrend', dest='nordGeneralTrend', type='int', 
+        p.add_option('-g', '--gentrend', dest='nordGeneralTrend', type='float', 
                      help='Polynomial order for fitting general trend.', 
-                     default=5)
+                     default=-1.5)
+        p.add_option('--decor', dest='decorMode', type='str', 
+                     help='Decorrelation mode: "1D" (faster) or "2D" (lower RMS).', 
+                     default='1D')
+        
 
         # Arguments used in the mode where the code searches for the
         # optimum aperture
@@ -215,7 +221,7 @@ def main(argv=None):
         # Options governing how we fit for xys
         p.add_option('--gausscen', dest='gausscen', type='int',default=1,
                      help='Fit 2D gaussians for centroids? 1=yes,0=no')
-        p.add_option('--xymeth', dest='xymeth', type='str',
+        p.add_option('--xymeth', dest='xymeth', type='str', default='xcorr2D',
                      help='xcorr1D,xcorr2D,cent. If more than 1, choose best')
         
         # Define the time ranges to search over
@@ -251,7 +257,7 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
         p.add_option('--fs', '--fontsize', dest='fs', type='float', 
                      help='Font size for plots.', default=15)
 
-        options, args = p.parse_args()
+        options, args = p.parse_args(argv)
 
         print ""
         print "Running motion decorrelation on %s" % options.fn
@@ -261,6 +267,7 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
         nthreads = options.nthreads
         resamp   = options.resamp
         nordGeneralTrend = options.nordGeneralTrend
+        decorMode = options.decorMode
         apertureMode   = options.apertureMode
         minrad   = options.minrad
         maxrad   = options.maxrad
@@ -278,6 +285,8 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
         xymeth = options.xymeth
 
         tlimits = [tmin, tmax]
+
+        shift = [0, 0]
 
         if options.aper:
             xcen,ycen = get_star_pos(fn,mode='aper')
@@ -297,13 +306,14 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
             frame0 = ma.median(frame0,axis=0)
             frame0.fill_value=0
             frame0= frame0.filled()
-            catcut = get_stars_pix(fn,frame0)
+            catcut, shift = get_stars_pix(fn,frame0)
             epic = headers[0]['KEPLERID']
             xcen,ycen = catcut.ix[epic]['pix0 pix1'.split()]
         else:
             xcen     = options.xcen
             ycen     = options.ycen
             pos_mode = 'manual'
+
 
         print "Using position mode %s, star is at pixels = [%.2f,%.2f]" % \
             (pos_mode,xcen,ycen)
@@ -331,13 +341,13 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
             fn, loc_flip, apertures, apertureMode=apertureMode, resamp=resamp,
             nordGeneralTrend=nordGeneralTrend, verbose=verbose, 
             plotalot=plotalot, xy=None, prfFrac=None, tlimits=tlimits, 
-            pool=pool, gausscen=gausscen,xymeth=xymeth)
+            pool=pool, gausscen=gausscen,xymeth=xymeth, decorMode=decorMode)
     else:
         results = runOptimizedPixelDecorrelation(
             fn, loc_flip, apertureMode=apertureMode, resamp=resamp, 
             nordGeneralTrend=nordGeneralTrend, pool=pool, tlimits=tlimits, 
             verbose=verbose, plotalot=0, minrad=minrad, maxrad=maxrad, 
-            gausscen=gausscen,xymeth=xymeth)
+            gausscen=gausscen,xymeth=xymeth, decorMode=decorMode)
 
     results.argv = argv
 
@@ -358,7 +368,7 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
         to_fits(results,fitsfn)
 
     # Plot pretty pictures & print to disk:
-    plotPixelDecorResults(results, fs=fs)
+    plotPixelDecorResults(results, fs=fs, shift=[0,0])
     pdffn = savefile + '.pdf'
 
     tools.printfigs(pdffn, pdfmode=plotmode, verbose=verbose)
@@ -394,6 +404,11 @@ rmsCleaned
 rmsHonest
 """
 fits_head_keys = fits_head_keys.split()
+
+def normalizeVector(vector):
+    """Renormalize input to span the interval (-1, +1)."""
+    # 2014-10-04 19:18 IJMC: Created
+    return 2 * ((vector - vector.min()) / (vector.max() - vector.min()) - 0.5)
 
 def to_fits(o,fitsfn):
     """
@@ -461,7 +476,7 @@ def read_fits(fitsfn):
     o.loc = [hdu[1].header['LOC%i' % (i+1)] for i in range(1)]
     return o
     
-def runOptimizedPixelDecorrelation(fn, loc, apertures=None, apertureMode='circular', resamp=1, nordGeneralTrend=-1.5, verbose=False, plotalot=False, xy=None, tlimits=[1862.45, np.inf], nthreads=1, pool=None, minrad=2, maxrad=15, minSkyRadius=4, skyBuffer=2, skyWidth=3, niter=3, gausscen=True,xymeth='xcorr2D'):
+def runOptimizedPixelDecorrelation(fn, loc, apertures=None, apertureMode='circular', resamp=1, nordGeneralTrend=-1.5, verbose=False, plotalot=False, xy=None, tlimits=[1862.45, np.inf], nthreads=1, pool=None, minrad=2, maxrad=15, minSkyRadius=4, skyBuffer=2, skyWidth=3, niter=3, gausscen=True,xymeth='xcorr2D', decorMode='1D'):
 
     """Run (1D)s pixel-decorrelation of Kepler Data, and optimized
     aperture too. If you want a single, fixed aperture then use
@@ -495,6 +510,11 @@ def runOptimizedPixelDecorrelation(fn, loc, apertures=None, apertureMode='circul
         If True, fit 2D Gaussians to the PSFs as an additional
         centroiding mechanism.  This is unfortunately rather slow!
 
+      decorMode : str
+        '1d' or '2d' -- method to decorrelate flux vs. position. 1D
+        mode is appreciably faster, but 2D mode will probably give a
+        lower RMS.
+
     :NOTES:
       This routine tried to optimize the photometric extraction
       aperture based on the RMS in the final light curve. Thus, it is
@@ -502,6 +522,7 @@ def runOptimizedPixelDecorrelation(fn, loc, apertures=None, apertureMode='circul
     """
     # 2014-08-29 11:59 IJMC: Created
     # 2014-09-06 17:53 IJMC: Added 'apertureMode' option.
+    # 2014-10-06 14:18 IJMC: Added 'decorMode' option.
     
     # Parse inputs:
     apertureMode = apertureMode.lower()
@@ -588,7 +609,7 @@ def runOptimizedPixelDecorrelation(fn, loc, apertures=None, apertureMode='circul
     outputs = []
     for rap0, frac in zip(inner_ap_radii, prfFrac):
         rap, thisFrac = getAperParam(rap0, frac)
-        outputs.append(runPixelDecorrelation(fn, loc, rap, apertureMode=apertureMode, resamp=resamp, nordGeneralTrend=nordGeneralTrend, verbose=verbose, plotalot=plotalot, xy=xy, prfFrac=thisFrac, tlimits=tlimits, gausscen=gausscen, nthreads=nthreads, pool=pool,xymeth=xymeth))
+        outputs.append(runPixelDecorrelation(fn, loc, rap, apertureMode=apertureMode, resamp=resamp, nordGeneralTrend=nordGeneralTrend, verbose=verbose, plotalot=plotalot, xy=xy, prfFrac=thisFrac, tlimits=tlimits, gausscen=gausscen, nthreads=nthreads, pool=pool,xymeth=xymeth,decorMode=decorMode))
 
     if verbose:
         print "Finished with initial grid of aperture sizes. Now home in."
@@ -628,7 +649,7 @@ def runOptimizedPixelDecorrelation(fn, loc, apertures=None, apertureMode='circul
             elif apertureMode=='prf':
                 alreadyTriedThisGuess = nearlyIn(nextFrac, prfFrac, tol=0.01)
 
-        outputs.append(runPixelDecorrelation(fn, loc, nextrap, apertureMode=apertureMode, resamp=resamp, nordGeneralTrend=nordGeneralTrend, verbose=verbose, plotalot=plotalot, xy=xy, tlimits=tlimits, gausscen=gausscen, prfFrac=nextFrac, nthreads=nthreads, pool=pool))
+        outputs.append(runPixelDecorrelation(fn, loc, nextrap, apertureMode=apertureMode, resamp=resamp, nordGeneralTrend=nordGeneralTrend, verbose=verbose, plotalot=plotalot, xy=xy, tlimits=tlimits, gausscen=gausscen, prfFrac=nextFrac, nthreads=nthreads, pool=pool, xymeth=xymeth, decorMode=decorMode))
         inner_ap_radii = np.concatenate((inner_ap_radii, [nextrap[0]]))
         prfFrac = np.concatenate((prfFrac, [outputs[-1].prfFrac]))
         manyRMS = np.array([o.rmsHonest for o in outputs]).squeeze()
@@ -651,7 +672,23 @@ def runOptimizedPixelDecorrelation(fn, loc, apertures=None, apertureMode='circul
 
     return finalOutput
 
-def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1, nordGeneralTrend=-1.5, verbose=False, plotalot=False, xy=None, prfFrac=None, tlimits=[1862.45, np.inf], nthreads=1, pool=None, gausscen=True,xymeth='xcorr2D'.split(',') ):
+
+def preconditionDataCubes(data, edata, medSubData=True, data_fill_value=0, edata_fill_value=9e9):
+    """Subtract median from data frames. Mask out NaNs in data and edata."""
+    # 2014-10-03 09:49 IJMC: Created
+    data = ma.masked_invalid(data)
+    data.fill_value = data_fill_value
+    if medSubData:
+        fmed = ma.median(data.reshape(data.shape[0],-1),axis=1)
+        data -= fmed[:,np.newaxis,np.newaxis]
+    data = data.filled()
+
+    edata = ma.masked_invalid(edata)
+    edata.fill_value = edata_fill_value
+    edata = edata.filled()
+    return data, edata
+
+def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1, nordGeneralTrend=-1.5, verbose=False, plotalot=False, xy=None, prfFrac=None, tlimits=[1862.45, np.inf], nthreads=1, pool=None, gausscen=True,xymeth='xcorr2D'.split(','), decorMode='1D' ):
     """Run (1D) pixel-decorrelation of Kepler Data with a single aperture setting.
 
     :INPUTS:
@@ -750,6 +787,8 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
     """
     # 2014-08-28 10:20 IJMC: Created
     # 2014-09-06 15:09 IJMC: Added aperturemode and prfFrac options.
+    # 2014-10-02 15:11 IJMC: Mask invalid 'edata' values.
+    # 2014-10-06 14:19 IJMC: Added decorMode option.
 
     apertureMode = apertureMode.lower()
     if verbose: 
@@ -763,13 +802,8 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
     cube,headers = loadPixelFile(fn, tlimits=tlimits)
     time, data, edata = cube['time'],cube['flux'],cube['flux_err']
 
-    # Perform flat fielding
-    data = ma.masked_invalid(data)
-    data.fill_value=0
-    fmed = ma.median(data.reshape(data.shape[0],-1),axis=1)
-    data -= fmed[:,np.newaxis,np.newaxis]
-    data = data.filled()
-
+    # Perform median-background subtraction; mask invalid values.
+    data, edata = preconditionDataCubes(data, edata)
 
     # Extract photometry (add eventual hook for PRF fitting):
     flux, eflux, bg, testphot = aperturePhotometryFromPixelData(
@@ -853,11 +887,20 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
         xys = [(xy[0], xy[1])]
 
     # Detrend the flux, picking optimal values for all parameters:
-    out = detrendFluxArcMotion(
-        time, flux, xys.values() , nordGeneralTrend=nordGeneralTrend, 
-        these_nord_arcs=None, these_nord_pixel1d=None, goodvals=None, 
-        plotalot=plotalot, verbose=verbose)
-    
+    if decorMode==1 or ('1' in decorMode):
+        out = detrendFluxArcMotion(
+            time, flux, xys.values() , nordGeneralTrend=nordGeneralTrend, 
+            these_nord_arcs=None, these_nord_pixel1d=None, goodvals=None, 
+            plotalot=plotalot, verbose=verbose)
+        decorMode = '1D'
+    elif decorMode==2 or ('2' in decorMode):
+        out = detrendFlux2DMotion(
+            time, flux, xys.values() , nordGeneralTrend=nordGeneralTrend, 
+            these_nord_arcs=None, these_nord_pixel1d=None, these_nord_pixel2d=None, 
+            goodvals=None, plotalot=plotalot, verbose=verbose, pool=pool)
+        decorMode = '2D'
+
+    #pdb.set_trace()
     # Stick everything into a big container-object:
     output = baseObject()
     output.headers = headers
@@ -867,9 +910,12 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
     output.apertureMode = apertureMode
     output.prfFrac = prfFrac
     output.nordGeneralTrend = nordGeneralTrend
+    output.decorMode = decorMode
   
     output.nordArc = out.nord_arc
     output.nordPixel1d = out.nord_pixel1d
+    if hasattr(out, 'nord_pixel2d'):
+        output.nordPixel2d = out.nord_pixel2d
     output.arc_fit = out.arc_fit
     output.decorBaseline = out.baseline
     output.decorMotion = out.decor
@@ -1270,7 +1316,7 @@ def xcorrStack(stack, npix_corr=4, plotalot=False, maxshift=np.inf):
 
     return dx, dy
 
-def getArcLengths(time, xypairs, these_nord_arcs=None, verbose=False):
+def getArcLengths(time, xypairs, these_nord_arcs=None, verbose=False, retmodXY=False):
     """Measure the length along curved arcs, defined by x-y coordinates.
   
     :INPUTS:
@@ -1285,8 +1331,12 @@ def getArcLengths(time, xypairs, these_nord_arcs=None, verbose=False):
         positions as a function of x'. Thus, zero is invalid. Each
         specified order will be tried. If None, defaults to
         np.arange(1,15)
+
+      redmodXY : bool
+        If True, also return the *modeled* X,Y positions from the optimal fit.
     """
     # 2014-08-27 19:23 IJMC: Created
+    # 2014-10-02 16:11 IJMC: Added retmodXY option.
 
     if verbose: print "Measuring arc lengths for each set of (x,y)"
 
@@ -1301,6 +1351,7 @@ def getArcLengths(time, xypairs, these_nord_arcs=None, verbose=False):
     ss = np.zeros((nxy, nobs), dtype=float)
     nord_arcs = np.zeros(nxy, dtype=int)
     arc_fits = []
+    arc_models = []
     thrusterFiringIndex = np.zeros((nxy, nobs), dtype=bool)
     for ii,xy in enumerate(xypairs):
         x, y = xy
@@ -1318,6 +1369,7 @@ def getArcLengths(time, xypairs, these_nord_arcs=None, verbose=False):
         arc_RMSes = np.zeros(nord)
         arc_npts = np.zeros(nord, int)
         these_arc_fits = []
+        these_arc_models = []
 
         for jj in these_nord_arcs:
             xvecs = np.array([xp_norm**n for n in xrange(jj)]).T
@@ -1331,7 +1383,12 @@ def getArcLengths(time, xypairs, these_nord_arcs=None, verbose=False):
             arc_RMSes[jj-1] = (yp-ypfit)[weights].std()
             arc_npts[jj-1] = weights.sum()
             these_arc_fits.append(fit)
-            #plot(xp, ypfit, '.')
+
+            xmod, ymod = np.dot(-rot, np.vstack((xp, ypfit)))
+            if np.corrcoef(x, xmod)[0,1]<0:
+                xmod *= -1
+                ymod *= -1
+            these_arc_models.append(np.vstack((xmod, ymod)))
 
         minRMS = arc_RMSes[np.isfinite(arc_RMSes)].min()
         arc_BICs = these_nord_arcs * np.log(arc_npts) + arc_npts * (arc_RMSes/minRMS)**2
@@ -1339,7 +1396,8 @@ def getArcLengths(time, xypairs, these_nord_arcs=None, verbose=False):
         nord_arcs[ii] = these_nord_arcs[arc_BICs==minBIC]
         fit = np.array(these_arc_fits)[arc_BICs==minBIC][0]
         arc_fits.append(fit)
-
+        model = np.array(these_arc_models)[arc_BICs==minBIC][0]
+        arc_models.append(model)
 
         # Measure distance along arc:
         ss[ii] =  computePolyCurveDistance(xp_norm, fit) * (xp.max()-xp.min())/2.
@@ -1353,7 +1411,11 @@ def getArcLengths(time, xypairs, these_nord_arcs=None, verbose=False):
         thrusterFiringIndex[ii] = True-noFiring
 
 
-    return ss, thrusterFiringIndex, nord_arcs, arc_fits
+    ret = ss, thrusterFiringIndex, nord_arcs, arc_fits
+    if retmodXY:
+        ret = ret + (arc_models,)
+
+    return ret
 
 def computePolyCurveDistance(x, coef, oversamp=100):
     """Compute distance along a polynomial curve, defined by input
@@ -1418,7 +1480,7 @@ def detrendFluxArcMotion(time, flux, xys, nordGeneralTrend=None,
     """
     # 2014-08-27 20:06 IJMC: Created
     # 2014-09-08 14:48 IJMC: Added check in case xys is empty.
-
+    # 2014-09-30 17:04 IJMC: Fixed typo: sevel --> seval
 
     # Compute the arc lengths:
 
@@ -1475,7 +1537,7 @@ def detrendFluxArcMotion(time, flux, xys, nordGeneralTrend=None,
                           -nordGeneralTrend)
         tnbins = 2 * ((tbins - time.min()) / (time.max() - time.min()) - 0.5)
 
-    if verbose: print "Fitting combined (baseline*motion) decorrelation."
+    if verbose: print "Fitting combined (baseline*motion) decorrelation (in 1D)"
     for ii,this_s in enumerate(ss):
         if verbose>1: print "Starting iteration %i/%i." % (ii+1, len(ss))
         #nord_pixel1ds = np.zeros(n1d-1, dtype=int)
@@ -1524,7 +1586,7 @@ def detrendFluxArcMotion(time, flux, xys, nordGeneralTrend=None,
                     if (teval==0).any():  tevel[teval==0] = 1.
                     sfit = np.polyfit(s_norm[goodvals], (flux / teval)[goodvals], nord-1)
                     seval = np.polyval(sfit, s_norm)
-                    if (seval==0).any():  sevel[seval==0] = 1.
+                    if (seval==0).any():  seval[seval==0] = 1.
                     oldchi = newchi + 0.
                     newchi = ((flux - seval * teval)**2)[goodvals].sum()
                     dchi = oldchi - newchi
@@ -1542,9 +1604,9 @@ def detrendFluxArcMotion(time, flux, xys, nordGeneralTrend=None,
 
             if plotalot>=2:
                 py.figure()
-                py.plot(this_s[goodvals], fluxDetrend[goodvals], 'oc')
+                py.plot(this_s[goodvals], ((flux/all_baseline_decors[ii,jj]))[goodvals], 'oc')
                 py.plot(this_s, all_sff_decors[ii,jj], '.k', mfc='orange')
-                py.errorbar(sbin, fbin, efbin, fmt='ok', ms=11)
+                #py.errorbar(sbin, fbin, efbin, fmt='ok', ms=11)
                 py.title('%i, %i' % (ii, jj))
 
         detrendSplines.append(these_splines)
@@ -1583,24 +1645,503 @@ def detrendFluxArcMotion(time, flux, xys, nordGeneralTrend=None,
     return output
 
 
-def plot_label(image,catcut,epic,colorbar=True):
-    imshow2(image)
+def detrendFlux2DMotion(time, flux, xys, nordGeneralTrend=None,
+                         these_nord_arcs=None, these_nord_pixel1d=None,
+                        these_nord_pixel2d=None,
+                         goodvals=None, plotalot=False, verbose=False, pool=None):
+    """See function name: remove effect of (projected 1D) motion on photometry.
+
+    :INPUTS:
+      time : 1D NumPy array
+        Time index at which flux, X, Y values were measured.
+
+      flux : 1D NumPy array
+        Raw flux of the target at each timestep, e.g. from aperture photometry.
+
+      xys: sequence of 2-tuples 
+        Sets of X & Y values, measured by various techniques.
+
+      nordGeneralTrend : int
+        Polynomial order to remove slow, overall trends from the photometry.
+
+        if Negative, we instead median-bin the data in bins of width
+        '-nordGeneralTrend' *days*, fit a linear spline, and divide
+        out that as the trend instead. 
+
+      these_nord_arcs : sequence of positive ints
+        Number of polynomial terms to use for fitting the rotated y'
+        positions as a function of x'. Thus, zero is invalid. Each
+        specified order will be tried. Passed to :func:`getArcLengths.
+
+      these_nord_pixel1d : sequence of positive ints
+        Number of polynomial terms to use for fitting the dependence
+        of 'flux' on the projected arc motions from x and y. If None,
+        defaults to range(3, 20)
+
+      goodvals : 1D Numpy array (of type bool)
+        True for usable mesurements; False elsewhere.
+
+      pool : for multiprocessing
+
+    """
+    # 2014-10-05 21:38 IJMC: Created from 1D version.
+
+    nxy = len(xys)
+    nobs = time.size
+    output = baseObject() 
+    if nxy==0:
+        output.x, output.y = np.zeros((2, nobs))
+        output.s = np.zeros(nobs)
+        output.decor = np.median(flux)
+        output.rmsCleaned = flux.std() / output.decor
+        output.rmsHonest = flux.std() / output.decor
+        output.nord_arc = 0
+        output.nord_pixel1d = 0
+        output.arc_fit = np.array([1])
+        output.baseline = np.ones(nobs)
+        output.flux = flux
+        output.goodvals = np.ones(nobs, dtype=bool)
+        output.noThrusterFiring = np.ones(nobs, dtype=bool)
+        return output
+
+    # Compute the arc lengths:
+    res = getArcLengths(time, xys, these_nord_arcs, verbose=verbose)
+    ss, thrusterIndex, nord_arcs, arc_fits = res
+
+    # Parse inputs:
+    if these_nord_pixel1d is None:
+        these_nord_pixel1d = np.arange(2, 20)
+    if not isinstance(these_nord_pixel1d, np.ndarray):
+        these_nord_pixel1d = np.array(these_nord_pixel1d)
+    n1d = these_nord_pixel1d.size
+
+    if these_nord_pixel2d is None:
+        these_nord_pixel2d = np.arange(1, 6)
+    if not isinstance(these_nord_pixel2d, np.ndarray):
+        these_nord_pixel2d = np.array(these_nord_pixel2d)
+    n2d = these_nord_pixel2d.size
+
+    if goodvals is None:
+        goodvals0 = True - thrusterIndex
+    elif goodvals.ndim==1:
+        goodvals0 = np.tile(goodvals, (nxy, 1))
+    else:
+        goodvals0 = goodvals
+
+    goodvals = goodvals0.all(axis=0)
+
+    # Fit detrended flux to (projected) stellar motion:
+    baseline_decors = np.zeros((nxy, nobs), dtype=float)
+    RMSes = np.zeros(nxy)
+    detrendSplines = []
+    allRMSes = np.zeros((nxy, n1d, n2d), dtype=float)
+    honestRMSes = np.zeros((nxy, n1d, n2d), dtype=float)
+    all_sff_decors = np.zeros((nxy, n1d, n2d, nobs), dtype=float)
+    all_baseline_decors = np.zeros((nxy, n1d, n2d, nobs), dtype=float)
+    t_norm = normalizeVector(time)
+    if nordGeneralTrend>0:
+        det = 'poly'
+    else:
+        det = 'bin'
+        tbins = np.arange(time[goodvals].min(), time[goodvals].max(), 
+                          -nordGeneralTrend)
+        tnbins = 2 * ((tbins - time.min()) / (time.max() - time.min()) - 0.5)
+
+    if verbose: print "Fitting combined (baseline*motion) decorrelation -- in 2D!"
+    for ii,this_s in enumerate(ss):
+        x, y = xys[ii]
+        rot,sjunk,vjunk = np.linalg.svd(np.cov(x, y))
+        xp, yp = np.dot(rot, np.vstack((x, y)))
+        x_norm, y_norm = normalizeVector(xp), normalizeVector(yp)
+        s_norm = normalizeVector(this_s)
+
+        if verbose>1: print "Starting iteration %i/%i." % (ii+1, len(ss))
+        #nord_pixel1ds = np.zeros(n1d-1, dtype=int)
+        these_splines = []
+        #these_decors = np.zeros((nord_pixel1ds.size, nobs), dtype=float)
+        for j2, nord2 in enumerate(these_nord_pixel2d):
+            if verbose>1: print "Starting sub-iteration %i/%i." % (j2+1, n2d)
+            #for j1, nord1 in enumerate(these_nord_pixel1d):
+                #if verbose>1: print "Starting sub-sub-iteration %i/%i." % (j2+1, n2d)
+                #svecs = np.array([s_norm**n for n in range(nord1)])
+                #baseline, sff, rms1 = \
+                #    lsqDecorHelperBin(flux, t_norm, s_norm, y_norm, goodvals, nord1, nord2, tnbins, verbose=verbose)
+                #args = (flux, t_norm, s_norm, y_norm, goodvals, nord1, nord2, tnbins, verbose)
+                #baseline, sff, rms1 = lsqDecorHelperBinParallel(args)
+
+                #all_baseline_decors[ii,j1,j2] = baseline
+                #all_sff_decors[ii,j1,j2] = sff
+                #allRMSes[ii,j1,j2] = rms1
+                #honestRMSes[ii,j1,j2] = rms1 
+            allArgs = [(flux, t_norm, s_norm, y_norm, goodvals, nord1, nord2, tnbins, verbose) for nord1 in these_nord_pixel1d]
+            if pool is None:
+                results = map(lsqDecorHelperBinParallel, allArgs)
+            else:
+                results = pool.map(lsqDecorHelperBinParallel, allArgs)
+
+            all_baseline_decors[ii,:,j2] = [res[0] for res in results]
+            all_sff_decors[ii,:,j2] = [res[1] for res in results]
+            allRMSes[ii,:,j2] = [res[2] for res in results]
+            honestRMSes[ii,:,j2] = [res[2] for res in results]
+            
+
+            if plotalot>=2:
+                py.figure()
+                py.plot(this_s[goodvals], ((flux/all_baseline_decors[ii,j1,j2]))[goodvals], 'oc')
+                py.plot(this_s, all_sff_decors[ii,j1,j2], '.k', mfc='orange')
+                #py.errorbar(sbin, fbin, efbin, fmt='ok', ms=11)
+                py.title('%i, %i' % (ii, jj))
+
+        detrendSplines.append(these_splines)
+        minRMS = allRMSes[np.isfinite(allRMSes)].min()
+        allChisq = goodvals.sum() * (allRMSes/minRMS)**2
+        nparam = np.arange(n1d).reshape(n1d, 1) + np.arange(n2d)
+        allBIC = allChisq + np.log(goodvals.sum()) * nparam
+
+    # Select the model with the lowest final RMS:
+    bestBIC = allBIC[np.isfinite(allBIC)].min()
+    bestInd = (allBIC==bestBIC).nonzero()
+
+    output.bestInd = bestInd
+    output.x, output.y = xys[bestInd[0]]
+    output.s = ss[bestInd[0]].squeeze()
+    output.rmsCleaned = allRMSes[bestInd]
+    output.rmsHonest = honestRMSes[bestInd]
+    output.decor = all_sff_decors[bestInd].squeeze()
+    output.nord_arc = nord_arcs[bestInd[0]]
+    output.nord_pixel1d = (these_nord_pixel1d[bestInd[1]])
+    output.nord_pixel2d = (these_nord_pixel2d[bestInd[2]])
+    output.arc_fit = arc_fits[bestInd[0]]
+    output.baseline = all_baseline_decors[bestInd].squeeze()
+    output.flux = flux
+    output.goodvals = goodvals
+    output.noThrusterFiring = True - thrusterIndex[bestInd[0]]
+
+    if plotalot>=1:
+        py.figure()
+        py.plot(output.s, flux / output.baseline, 'or', mec='k')
+        py.plot(output.s[goodvals], (flux / output.baseline)[goodvals], 'oc', mec='k')
+        py.plot(output.s, output.decor, '.', color='orange')
+        py.xlabel('Arclength [pixels]', fontsize=15)
+        py.ylabel('Detrended Flux', fontsize=15)
+        py.minorticks_on()
+
+    return output
+
+def lsqDecorHelperBinParallel(argTuple):
+    """Allows :func:`lsqDecorHelperBin` to be looped w/ 'map'."""
+    return lsqDecorHelperBin(*argTuple)
+
+def lsqDecorHelperBin(flux, t_norm, s_norm, y_norm, goodvals, nord_s, nord_y, tnbins, verbose=False):
+    """Allow :func:`lsqDecorHelperBin` to be multiprocessed."""
+    # 2014-10-06 13:40 IJMC: Created
+    nobs = flux.size
+    nord_s = max(1, nord_s)
+    svecs = np.array([s_norm**n for n in range(nord_s)])
+    if nord_y>1:
+        yvecs = np.array([y_norm**n for n in range(1,nord_y)])
+        allvecs = np.vstack((svecs, yvecs))
+    else:
+        allvecs = svecs
+
+    newchi = 9e99
+    dchi = 9e99
+    #sz = svecs[goodvals].mean(0)
+    seval = np.ones(nobs)
+    iter = 0
+    maxiter = 200
+    while np.abs(dchi)>0.1 and iter < maxiter:
+        tbin, fbin, junk, junk = tools.errxy(t_norm[goodvals], (flux/seval)[goodvals], tnbins, xmode='mean', ymode='median')
+        good = np.isfinite(tbin) * np.isfinite(fbin)
+        teval = np.interp(t_norm, tbin[good], fbin[good])
+        if (teval==0).any():  tevel[teval==0] = 1.
+        sfit, junk = an.lsq(allvecs.T[goodvals], (flux / teval)[goodvals])
+        seval = np.dot(sfit, allvecs)
+        if (seval==0).any():  seval[seval==0] = 1.
+        oldchi = newchi + 0.
+        newchi = ((flux - seval * teval)**2)[goodvals].sum()
+        dchi = oldchi - newchi
+        iter += 1
+
+    if iter==maxiter and verbose>1:
+        print "Did not converge on a (baseline*motion) fit after %i iterations." % iter
+    elif verbose>2: 
+        print "Converged after %i iterations." % iter
+
+    #all_baseline_decors[ii,j1,j2] = teval
+    #all_sff_decors[ii,j1,j2] = seval
+    #allRMSes[ii,j1,j2] = (flux/all_sff_decors[ii,j1,j2]/ all_baseline_decors[ii,j1,j2])[goodvals].std()
+    #honestRMSes[ii,j1,j2] = (flux/all_sff_decors[ii,j1,j2]/ all_baseline_decors[ii,j1,j2])[True - thrusterIndex[ii]].std()
+
+    baseline = teval
+    sff = seval
+    rms1 = (flux/sff/ baseline)[goodvals].std()
+    #rms2 = (flux/sff/ baseline)[True - thrusterIndex[ii]].std()
+
+
+    return baseline, sff, rms1#, rms2
+
+
+def detrendFlux2DMotionBak(time, flux, xys, nordGeneralTrend=None,
+                         these_nord_arcs=None, these_nord_pixel1d=None,
+                        these_nord_pixel2d=None,
+                         goodvals=None, plotalot=False, verbose=False):
+    """See function name: remove effect of (projected 1D) motion on photometry.
+
+    :INPUTS:
+      time : 1D NumPy array
+        Time index at which flux, X, Y values were measured.
+
+      flux : 1D NumPy array
+        Raw flux of the target at each timestep, e.g. from aperture photometry.
+
+      xys: sequence of 2-tuples 
+        Sets of X & Y values, measured by various techniques.
+
+      nordGeneralTrend : int
+        Polynomial order to remove slow, overall trends from the photometry.
+
+        if Negative, we instead median-bin the data in bins of width
+        '-nordGeneralTrend' *days*, fit a linear spline, and divide
+        out that as the trend instead. 
+
+      these_nord_arcs : sequence of positive ints
+        Number of polynomial terms to use for fitting the rotated y'
+        positions as a function of x'. Thus, zero is invalid. Each
+        specified order will be tried. Passed to :func:`getArcLengths.
+
+      these_nord_pixel1d : sequence of positive ints
+        Number of polynomial terms to use for fitting the dependence
+        of 'flux' on the projected arc motions from x and y. If None,
+        defaults to range(3, 20)
+
+      goodvals : 1D Numpy array (of type bool)
+        True for usable mesurements; False elsewhere.
+
+
+    TODO
+    ----
+    Loop too deep. Figure out which polynomial order gives best RMS
+    for each method. Then compare the methods.
+    """
+    # 2014-10-05 21:38 IJMC: Created from 1D version.
+
+    nxy = len(xys)
+    nobs = time.size
+    output = baseObject() 
+    if nxy==0:
+        output.x, output.y = np.zeros((2, nobs))
+        output.s = np.zeros(nobs)
+        output.decor = np.median(flux)
+        output.rmsCleaned = flux.std() / output.decor
+        output.rmsHonest = flux.std() / output.decor
+        output.nord_arc = 0
+        output.nord_pixel1d = 0
+        output.arc_fit = np.array([1])
+        output.baseline = np.ones(nobs)
+        output.flux = flux
+        output.goodvals = np.ones(nobs, dtype=bool)
+        output.noThrusterFiring = np.ones(nobs, dtype=bool)
+        return output
+
+    # Compute the arc lengths:
+    res = getArcLengths(time, xys, these_nord_arcs, verbose=verbose)
+    ss, thrusterIndex, nord_arcs, arc_fits = res
+
+    # Parse inputs:
+    if these_nord_pixel1d is None:
+        these_nord_pixel1d = np.arange(2, 15)
+    if not isinstance(these_nord_pixel1d, np.ndarray):
+        these_nord_pixel1d = np.array(these_nord_pixel1d)
+    n1d = these_nord_pixel1d.size
+
+    if these_nord_pixel2d is None:
+        these_nord_pixel2d = np.arange(1, 6)
+    if not isinstance(these_nord_pixel2d, np.ndarray):
+        these_nord_pixel2d = np.array(these_nord_pixel2d)
+    n2d = these_nord_pixel2d.size
+
+    if goodvals is None:
+        goodvals0 = True - thrusterIndex
+    elif goodvals.ndim==1:
+        goodvals0 = np.tile(goodvals, (nxy, 1))
+    else:
+        goodvals0 = goodvals
+
+    goodvals = goodvals0.all(axis=0)
+
+    # Fit detrended flux to (projected) stellar motion:
+    baseline_decors = np.zeros((nxy, nobs), dtype=float)
+    RMSes = np.zeros(nxy)
+    detrendSplines = []
+    allRMSes = np.zeros((nxy, n1d, n2d), dtype=float)
+    honestRMSes = np.zeros((nxy, n1d, n2d), dtype=float)
+    all_sff_decors = np.zeros((nxy, n1d, n2d, nobs), dtype=float)
+    all_baseline_decors = np.zeros((nxy, n1d, n2d, nobs), dtype=float)
+    t_norm = normalizeVector(time)
+    if nordGeneralTrend>0:
+        det = 'poly'
+    else:
+        det = 'bin'
+        tbins = np.arange(time[goodvals].min(), time[goodvals].max(), 
+                          -nordGeneralTrend)
+        tnbins = 2 * ((tbins - time.min()) / (time.max() - time.min()) - 0.5)
+
+    if verbose: print "Fitting combined (baseline*motion) decorrelation -- in 2D!"
+    for ii,this_s in enumerate(ss):
+        x, y = xys[ii]
+        rot,sjunk,vjunk = np.linalg.svd(np.cov(x, y))
+        xp, yp = np.dot(rot, np.vstack((x, y)))
+        x_norm, y_norm = normalizeVector(xp), normalizeVector(yp)
+        s_norm = normalizeVector(this_s)
+
+        if verbose>1: print "Starting iteration %i/%i." % (ii+1, len(ss))
+        #nord_pixel1ds = np.zeros(n1d-1, dtype=int)
+        these_splines = []
+        #these_decors = np.zeros((nord_pixel1ds.size, nobs), dtype=float)
+        for j1, nord1 in enumerate(these_nord_pixel1d):
+            if verbose>1: print "Starting sub-iteration %i/%i." % (j1+1, n1d)
+            svecs = np.array([s_norm**n for n in range(nord1)])
+            for j2, nord2 in enumerate(these_nord_pixel2d):
+                if verbose>1: print "Starting sub-sub-iteration %i/%i." % (j2+1, n2d)
+                if False:   # Like Vanderburg & Johnson:
+                    fbins = np.linspace(this_s[goodvals].min(), 
+                                        this_s[goodvals].max(), nord1)
+
+                    sbin,fbin,junk,efbin = \
+                        tools.errxy(this_s[goodvals], fluxDetrend[goodvals], fbins,
+                                    clean=dict(nsigma=3, remove='both', niter=1),
+                                    yerr='std')
+
+                    finind = np.isfinite(sbin * fbin)
+                    these_splines.append(interpolate.UnivariateSpline(sbin[finind], fbin[finind], s=0, k=1))
+                    all_sff_decors[ii,jj] = these_splines[jj](this_s)
+                    fluxFinal = flux / all_sff_decors[ii,jj]
+                    if det=='poly':
+                        pfit_decor = an.polyfitr(time[goodvals]-time.min(), (flux/all_sff_decors[ii,jj])[goodvals], nordGeneralTrend, 3)
+                        all_baseline_decors[ii,jj] = np.polyval(pfit_decor, time-time.min())
+                    elif det=='bin':
+                        tbin, fbin, junk, junk = tools.errxy(time[goodvals], (flux/all_sff_decors[ii,jj])[goodvals], tbins, xmode='mean', ymode='median')
+                        all_baseline_decors[ii,jj] = np.interp(time-time.min(), tbin-time.min(), fbin)
+
+                else:   # Seems more reliable:
+                    yvecs = np.array([y_norm**n for n in range(1,nord2)])
+                    if yvecs.size>0:
+                        allvecs = np.vstack((svecs, yvecs))
+                    else:
+                        allvecs = svecs
+
+                    newchi = 9e99
+                    dchi = 9e99
+                    #sz = svecs[goodvals].mean(0)
+                    seval = np.ones(nobs)
+                    iter = 0
+                    maxiter = 2000
+                    while np.abs(dchi)>0.1 and iter < maxiter:
+                        if det=='poly':
+                            tfit = np.polyfit(t_norm[goodvals], (flux / seval)[goodvals], nordGeneralTrend-1)
+                            teval = np.polyval(tfit, t_norm)
+                        elif det=='bin':
+                            tbin, fbin, junk, junk = tools.errxy(t_norm[goodvals], (flux/seval)[goodvals], tnbins, xmode='mean', ymode='median')
+                            good = np.isfinite(tbin) * np.isfinite(fbin)
+                            teval = np.interp(t_norm, tbin[good], fbin[good])
+                        if (teval==0).any():  tevel[teval==0] = 1.
+                        #sfit = np.polyfit(s_norm[goodvals], (flux / teval)[goodvals], nord-1)
+                        #seval = np.polyval(sfit, s_norm)
+                        sfit, junk = an.lsq(allvecs.T[goodvals], (flux / teval)[goodvals])
+                        seval = np.dot(sfit, allvecs)
+                        if (seval==0).any():  seval[seval==0] = 1.
+                        oldchi = newchi + 0.
+                        newchi = ((flux - seval * teval)**2)[goodvals].sum()
+                        dchi = oldchi - newchi
+                        iter += 1
+
+                    if iter==maxiter and verbose>1:
+                        print "Did not converge on a (baseline*motion) fit after %i iterations." % iter
+                    elif verbose>2: 
+                        print "Converged after %i iterations." % iter
+                    all_baseline_decors[ii,j1,j2] = teval
+                    all_sff_decors[ii,j1,j2] = seval
+
+                allRMSes[ii,j1,j2] = (flux/all_sff_decors[ii,j1,j2]/ all_baseline_decors[ii,j1,j2])[goodvals].std()
+                honestRMSes[ii,j1,j2] = (flux/all_sff_decors[ii,j1,j2]/ all_baseline_decors[ii,j1,j2])[True - thrusterIndex[ii]].std()
+
+                if plotalot>=2:
+                    py.figure()
+                    py.plot(this_s[goodvals], ((flux/all_baseline_decors[ii,j1,j2]))[goodvals], 'oc')
+                    py.plot(this_s, all_sff_decors[ii,j1,j2], '.k', mfc='orange')
+                    #py.errorbar(sbin, fbin, efbin, fmt='ok', ms=11)
+                    py.title('%i, %i' % (ii, jj))
+
+        detrendSplines.append(these_splines)
+        minRMS = allRMSes[np.isfinite(allRMSes)].min()
+        allChisq = goodvals.sum() * (allRMSes/minRMS)**2
+        nparam = np.arange(n1d).reshape(n1d, 1) + np.arange(n2d)
+        allBIC = allChisq + np.log(goodvals.sum()) * nparam
+
+    # Select the model with the lowest final RMS:
+    bestBIC = allBIC[np.isfinite(allBIC)].min()
+    bestInd = (allBIC==bestBIC).nonzero()
+
+    output.bestInd = bestInd
+    output.x, output.y = xys[bestInd[0]]
+    output.s = ss[bestInd[0]].squeeze()
+    output.rmsCleaned = allRMSes[bestInd]
+    output.rmsHonest = honestRMSes[bestInd]
+    output.decor = all_sff_decors[bestInd].squeeze()
+    output.nord_arc = nord_arcs[bestInd[0]]
+    output.nord_pixel1d = (these_nord_pixel1d[bestInd[1]])
+    output.nord_pixel2d = (these_nord_pixel2d[bestInd[2]])
+    output.arc_fit = arc_fits[bestInd[0]]
+    output.baseline = all_baseline_decors[bestInd].squeeze()
+    output.flux = flux
+    output.goodvals = goodvals
+    output.noThrusterFiring = True - thrusterIndex[bestInd[0]]
+
+    if plotalot>=1:
+        py.figure()
+        py.plot(output.s, flux / output.baseline, 'or', mec='k')
+        py.plot(output.s[goodvals], (flux / output.baseline)[goodvals], 'oc', mec='k')
+        py.plot(output.s, output.decor, '.', color='orange')
+        py.xlabel('Arclength [pixels]', fontsize=15)
+        py.ylabel('Detrended Flux', fontsize=15)
+        py.minorticks_on()
+
+    return output
+
+
+
+def plot_label(image,catcut,epic,colorbar=True, shift=None, retim=False, cmap=None):
+    # 2014-09-30 18:33 IJMC: Added shift option.
+    # 2014-10-07 20:58 IJMC: Added 'retim' flag and 'cmap' option.
+    im = imshow2(image, cmap=cmap)
     if colorbar:
         py.colorbar(orientation='vertical')
 
     targstar = catcut.ix[epic]
+    if shift is None:
+        x0, x1 = 0, 0
+    else:
+        x0, x1 = shift[0:2]
 
     def label_stars(x,**kwargs):
-        py.text(x['pix0'],x['pix1'],'%(epic)09d, %(kepmag).1f' % x,**kwargs)
+        py.text(x['pix0']+x0,x['pix1']+x1,'%(epic)09d, %(kepmag).1f' % x,**kwargs)
 
-    py.plot(catcut['pix0'],catcut['pix1'],'oc')
+    py.plot(catcut['pix0']+x0,catcut['pix1']+x1,'oc')
     catcut.apply(lambda x : label_stars(x,color='c',size='x-small'),axis=1)
 
-    py.plot(targstar['pix0'],targstar['pix1'],'o',color='Tomato')
+    py.plot(targstar['pix0']+x0,targstar['pix1']+x1,'o',color='Tomato')
     label_stars(targstar,color='Tomato',size='x-small')
 
+    if retim:
+        ret = im
+    else:
+        ret = None
 
-def plotPixelDecorResults(input, fs=10):
+    return ret
+
+
+def plotPixelDecorResults(input, fs=10, shift=None):
     """Plot the results of a pixel-decorrelation run.
     
     :INPUTS:
@@ -1611,6 +2152,9 @@ def plotPixelDecorResults(input, fs=10):
       fs : positive scalar
         The font size.
 
+      shift : None or 2-sequence
+        Offset between WCS positions and data frame (in pixels) --
+        passed to :func:`plot_label`
     """
     # 2014-08-28 20:37 IJMC: Created
 
@@ -1693,22 +2237,27 @@ def plotPixelDecorResults(input, fs=10):
 
     if hasattr(input,'catcut'):
         py.sca(axL_im[0])
-        plot_label(input.medianFrame,input.catcut,input.epic)
+        plot_label(input.medianFrame,input.catcut,input.epic, shift=shift)
         py.title("Median Frame")
         py.sca(axL_im[1])    
         logframe = np.log10(input.medianFrame)
         logframe = ma.masked_invalid(logframe)
         logframe.fill_value=0
         logframe = logframe.filled()
-        plot_label(logframe,input.catcut,input.epic)
+        plot_label(logframe,input.catcut,input.epic, shift=shift)
         py.title("log10(Median Frame)")
+        
 
-    if input.apertureMode[0:4]=='circ':
-        xy = list(input.loc)[::-1] # FLIP x and y
-        args =  xy + [input.apertures[0],]
-        for i in range(2):
-            py.sca(axL_im[i])
-            tools.drawCircle(*args,color='lime', fill=False, linewidth=3)
+    for i in range(2):
+        py.sca(axL_im[i])
+        py.contour(input.crudeApertureMask, [0.5], colors='g', linewidths=2.5)
+    #if input.apertureMode[0:4]=='circ':
+    #    xy = list(input.loc)[::-1] # FLIP x and y
+    #    args =  [xy[0]+shift[0], xy[1]+shift[1], input.apertures[0]]
+    #    for i in range(2):
+    #        py.sca(axL_im[i])
+    #        tools.drawCircle(*args,color='lime', fill=False, linewidth=3)
+
 
     py.gcf().text(.5, .95, titstr, fontsize='large', ha='center')
     ax = py.axis()
@@ -1773,14 +2322,14 @@ def plotPixelDecorResults(input, fs=10):
     py.figure()
     ax1 = py.subplot(211, position=[.15, .45, .8, .45])
     py.plot(time, input.decorBaseline * input.decorMotion/f0, '-k')
-    py.plot(time, input.rawFlux/f0, 'oc', mec='k')
-    py.plot(time[input.noThrusterFiring], (input.rawFlux / input.decorMotion)[input.noThrusterFiring]/f0 - 8*input.rmsCleaned, 'o', mfc='orange', mec='k')
+    py.plot(time, input.rawFlux/f0, '.c', mec='k')
+    py.plot(time[input.noThrusterFiring], (input.rawFlux / input.decorMotion)[input.noThrusterFiring]/f0 - 8*input.rmsCleaned, '.', mfc='orange', mec='k')
     py.ylabel('Normalized Flux', fontsize=fs)
 
     py.title(titstr, fontsize=fs*1.2)
     ax2 = py.subplot(212, position=[.15, .1, .8, .3])
     py.plot(time[input.noThrusterFiring], 
-            input.cleanFlux[input.noThrusterFiring], 'o', mfc='lime')
+            input.cleanFlux[input.noThrusterFiring], '.', mfc='lime')
     py.plot(py.xlim(), [1,1], '--k')
     #ylim(1.-8*rms, 1.+8*rms)
     ax2.get_yaxis().set_major_formatter(py.FormatStrFormatter('%01.4f'))
@@ -1812,8 +2361,10 @@ def plotPixelDecorResults(input, fs=10):
               'Photometry oversamp = %1.1f' % input.resamp,
               'Poly. order, target motion fit:       %i' % (input.nordArc-1),
               trendstr, 
-              'Poly. order, pixel-motion correction: %i' % (input.nordPixel1d-1),
-              '', 'Per-point RMS (honest):   %1.1f ppm' % (input.rmsHonest*1e6),
+              'Poly. order, pixel-motion correction: %i' % (input.nordPixel1d-1)]
+    if hasattr(input, 'nordPixel2d'):
+        tlines += ['   2D order, pixel-motion correction: %i' % (input.nordPixel2d-1)]
+    tlines += ['', 'Per-point RMS (honest):   %1.1f ppm' % (input.rmsHonest*1e6),
               '', 'Per-point RMS (cleaned):  %1.1f ppm' % (input.rmsCleaned*1e6),
               '2-hour RMS (cleaned):     %1.1f ppm' % (RMS2hr*1e6),
               '6-hour RMS (cleaned):     %1.1f ppm' % (RMS6hr*1e6)]
@@ -2582,7 +3133,10 @@ def get_stars_pix(pixfn,frame):
     Return
     ------
     catcut : DataFrame with stars position in pixel coordinates
+    shift : shift between WCS and data frame (in pixels)
+
     """
+    # 2014-09-30 18:30 IJMC: Now output both catcut & shift
 
     catcut = query_stars_in_stamp(pixfn)
     
@@ -2614,7 +3168,8 @@ def get_stars_pix(pixfn,frame):
     epic = fits.open(pixfn)[0].header['KEPLERID']
     xcen,ycen = catcut.ix[epic]['pix0 pix1'.split()]
     print xcen,ycen
-    return catcut
+    return catcut, shift
+
 
 class gaussian:
     """
@@ -2628,11 +3183,21 @@ class gaussian:
         arg = -0.5 * ( ((x-self.x0)/self.sig)**2 + ((y-self.y0)/self.sig)**2)
         return np.exp(arg)
 
+def log10scale(im):
+    """
+    Scales an image to log10. Sets nans and any value < 1 to 0
+    """
+    im = np.log10(im)
+    im = ma.masked_invalid(im)
+    im.mask = im.mask | (im < 0)
+    im.fill_value = 0 
+    return im.filled()
+
 
 def imshow2(im,**kwargs):
     extent = None#(0,im.shape[0],0,im.shape[1])
 
-    if kwargs.has_key('cmap')==False:
+    if kwargs.has_key('cmap')==False or kwargs['cmap'] is None:
         kwargs['cmap'] = cm.gray 
 
     imshow(im,interpolation='nearest',origin='lower',
@@ -2640,5 +3205,6 @@ def imshow2(im,**kwargs):
 
 if __name__ == "__main__":
     sys.exit(main())
+
 
 
