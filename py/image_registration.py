@@ -140,7 +140,7 @@ def register_images(im1, im2, usfac=1, return_registered=False,
         Measures the amount im2 is offset from im1 (i.e., shift im2 by these #'s
         to match im1)
 
-    # Really weird convention
+    # !!! Really weird convention !!!
     nd.shift(im2,[-dy,-dx]) = im1
     """
     if not im1.shape == im2.shape:

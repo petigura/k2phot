@@ -380,7 +380,7 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
     py.close('all')
     return
 
-
+# Table with fits column description
 fits_col="""\
 "time","Time, BJD_TDB"
 "rawFlux","Raw aperture photometry"
@@ -3053,6 +3053,16 @@ class gaussian:
     def __call__(self,x,y):
         arg = -0.5 * ( ((x-self.x0)/self.sig)**2 + ((y-self.y0)/self.sig)**2)
         return np.exp(arg)
+
+def log10scale(im):
+    """
+    Scales an image to log10. Sets nans and any value < 1 to 0
+    """
+    im = np.log10(im)
+    im = ma.masked_invalid(im)
+    im.mask = im.mask | (im < 0)
+    im.fill_value = 0 
+    return im.filled()
 
 
 def imshow2(im,**kwargs):
