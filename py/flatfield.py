@@ -6,11 +6,75 @@ from numpy import ma
 
 import photutils
 from matplotlib import pylab as plt
-from pixel_decorrelation import imshow2
+from pixel_decorrelation import imshow2,get_star_pos,loadPixelFile,get_stars_pix,subpix_reg_stack
 from scipy import optimize
+import pandas as pd
+from pdplus import LittleEndian as LE
+import cPickle as pickle
+from argparse import ArgumentParser
+import photometry
+from matplotlib.pylab import *
+import copy
+import os.path
+from astropy.io import fits
 
-class star(object):
-    def __init__(self,flux,locrc,radius,pixels):
+class ImageStack(object):
+    def __init__(self,fn,tlimits=None):
+        pos_mode = 'wcs'
+        xcen,ycen = get_star_pos(fn,mode=pos_mode)
+
+        cube,headers = loadPixelFile(fn,tlimits=tlimits)
+        frame0 = ma.masked_invalid(cube['flux'])
+        frame0 = ma.median(frame0,axis=0)
+        frame0.fill_value=0
+        frame0 = frame0.filled()
+        catcut, shift = get_stars_pix(fn,frame0)
+        epic = headers[0]['KEPLERID']
+        xcen,ycen = catcut.ix[epic]['pix0 pix1'.split()]
+
+        print "Using position mode %s, star is at pixels = [%.2f,%.2f]" % \
+            (pos_mode,xcen,ycen)
+
+        self.locxy = (xcen,ycen)
+        self.locrc = (ycen,xcen) 
+        self.flux = cube['FLUX'].astype(float)
+        self.cad = cube['CADENCENO'].astype(int)
+
+        # Number of frames, rows, and columns
+        self.nframe,self.nrow,self.ncol = self.flux.shape 
+        self.npix = self.nrow*self.ncol
+
+        # Subtract off background
+        self.subtract_background()
+
+        # Store pixel values as a list
+        row,col = np.mgrid[:self.nrow,:self.ncol]
+        flux = ma.masked_invalid(self.flux)
+        df = pd.DataFrame(dict(row=row.flatten(),col=col.flatten()))
+        df['flux0'] = flux[0].flatten()
+        df['fluxsum'] = ma.sum(flux,axis=0).flatten()
+        df['dist'] = np.sqrt( (df.row - self.locrc[0])**2 + 
+                              (df.col - self.locrc[1])**2 )
+        df = pd.DataFrame(LE(df.to_records()))
+        self.df = df
+
+    def get_fbackground(self):
+        flux = self.flux.reshape(-1,self.npix,)
+        fbackground = np.median(flux,axis=1)
+        return fbackground
+
+    def subtract_background(self):
+        """
+        Subtracts off background value from flux
+        """
+        fbackground = self.get_fbackground() 
+        self.flux -= fbackground[:,np.newaxis,np.newaxis]  
+
+class FlatField(ImageStack):
+    """
+    Stack of images that we can used to compute Flat Field
+    """
+    def __init__(self,fn,pixels,radius,fmask=None,tlimits=None):
         """
         Parameters
         ----------
@@ -19,77 +83,107 @@ class star(object):
         radius : radius of aperture
         pixels : pixels to use in weighting scheme
         """
+        self.weight_bounds = [0.9,1.1]
+        self.fn = fn
+        # Instantiate from ImageStack class
+        super(FlatField,self).__init__(fn,tlimits=tlimits)
 
-        npix = len(pixels)
-        mask = np.zeros(flux[0].shape).astype(bool)
-        for i in range(npix):
+        # Create a 2D mask for weighted pixels.
+        # True = pixel is used in the reweighting
+        mask = np.zeros((self.nrow,self.ncol)).astype(bool)
+        self.nweights = len(pixels)
+        for i in range(self.nweights):
             r,c = pixels[i]
             mask[r,c] = True
-        
-        self.flux = flux
-        self.locrc = locrc # Position of star in row/column.
-                           # Center of star is at image[locrc]
-
-        self.locxy = locrc[::-1] # Position of star in x,y
-                               # plot(x,y)
-
+        self.mask = mask
         self.pixels = pixels
-        self.npix = npix
-        self.npts = flux.shape[0] # Number of flux measurements
+
+        # Bin up cadences used to compute robust fom
+        cad = pd.DataFrame(dict(cad=self.cad))
+        cad['cadbin'] = -1
+        n_cad_per_bin = 50 
+        cad_split = np.array_split(cad,len(cad)/n_cad_per_bin)
+        for cad in cad_split:
+            cad['cadbin'] = cad.iloc[0]['cad']
+        cad = pd.concat(cad_split)
+        self.dfcad = cad
+
         self.aperture = ('circular', radius)  
 
-        self.mask = mask
-        self.weights0 = np.ones(npix) 
+        # Option to mask out points for figure of merit
+        self.fmask = np.zeros(self.nframe).astype(bool)
+
+        # Set initial weights to unity
+        self.weights0 = np.ones(self.nweights) 
         self.weights = self.weights0.copy()
 
-        self.f_non_weighted = self.get_f_non_weighted()
+        # Default dx,dy
+        self.dx = np.zeros(self.nframe)
+        self.dy = np.zeros(self.nframe)
 
         self.fpix = self.get_fpix()
-        self.f_weighted0 = self.get_f_weighted(self.weights)
-        self.f_weighted0_sum = np.sum(self.f_weighted0)
+        self._update_fixed()
+        
+    def _update_fixed(self):
+        """
+        Update the parameters that are fixed during optimization
+        """
+        self.f_non_weighted = self.get_f_non_weighted()
         self.f_total0 = self.get_f_total(self.weights)
-        self.fluxerr = np.sqrt(self.f_total0)
-        # Construct constraint list
-        cons = []
+        self.f_total0_sum = ma.sum(self.f_total0)
 
-        bounds = []
-        for i in range(npix):
-            bounds.append( (0.90,1.1))
-        self.bounds = bounds
+    def set_fmask(self,fmask):
+        self.fmask = fmask
+        self._update_fixed()
+        
+    def set_dxdy_by_registration(self):
+        self.dx,self.dy = subpix_reg_stack(self.flux) 
+        self._update_fixed()
 
-    def fcons_weigthted_sum(self,weights):
-        return np.sum(self.get_f_weighted(weights)) - self.f_weighted0_sum
-    
     def get_f_non_weighted(self):
         """
         Return photometry for pixels that are not re-weighted
         """
-        f_non_weighted = np.zeros(self.npts)
-        for i in range(self.npts):
+        f_non_weighted = np.zeros(self.nframe)
+        for i in range(self.nframe):
+            locxy = self.get_aper_locxy(i)
+            frame = self.flux[i]
+
             fluxtable, aux_dict = photutils.aperture_photometry(
-                self.flux[i],self.locxy,self.aperture,mask=self.mask)
+                frame,locxy,self.aperture,mask=self.mask)
             f_non_weighted[i] = fluxtable[0][0]
         return f_non_weighted
 
-    def plot_weighted(self):
-        logflux = np.log10(self.flux[0])
+    def get_aper_locxy(self,i):
+        """
+        For frame i, return the xy location of aperture center
+        """
+        locxy = np.copy(self.locxy)
+        locxy[0]+=self.dx[i]
+        locxy[1]+=self.dy[i]
+        return locxy
+
+    def plot_frame(self,i):
+        aperlocxy = self.get_aper_locxy(i)
+        print aperlocxy
+        logflux = np.log10(self.flux[i])
         logflux = ma.masked_invalid(logflux)
         logflux.mask = logflux.mask | (logflux < 0)
         logflux.fill_value = 0
         logflux = logflux.filled()
         imshow2(logflux)
-        for i in range(self.npix):
+        for i in range(self.nweights):
             r,c = self.pixels[i]
             plt.text(c,r,i,va='center',ha='center',color='Orange')
-        ap = photutils.CircularAperture(self.locxy,r=self.aperture[1])
+        ap = photutils.CircularAperture(aperlocxy,r=self.aperture[1])
         ap.plot(color='Lime',lw=1.5,alpha=0.5)
 
     def get_fpix(self):
         """
         Return a npix by npts array with the flux from each pixel
         """
-        fpix = np.zeros((self.npix,self.npts))
-        for i in range(self.npix):
+        fpix = np.zeros((self.nweights,self.nframe))
+        for i in range(self.nweights):
             r,c = self.pixels[i]
             fpix[i] = self.flux[:,r,c]
 
@@ -99,74 +193,152 @@ class star(object):
         return np.dot(self.fpix.T,weights)
 
     def get_f_total(self,weights):
-        return self.get_f_weighted(weights) + self.f_non_weighted
-    
-    def fom(self,weights):
-        """
-        Return figure of merit given the current value of the weights
-        """
-        flux = self.get_f_weighted(weights)
-        fom = np.median(np.abs(flux - np.mean(flux)))
-        res = (flux - np.mean(flux))/self.fluxerr
-        fom = np.sum(res**2)
-        fom = np.std(flux)
-        # print weights
-        # print fom
-        return fom
+        f_total = self.get_f_weighted(weights) + self.f_non_weighted
+        f_total = ma.masked_array(f_total,self.fmask)
+        return f_total
 
-    def solve_weights(self):
+    def figure_of_merit(self,weights,metric):
+        fm = self.get_f_total(weights)
+        if metric=='mad':
+            fom = ma.median(ma.abs(fm - ma.median(fm)))
+        if metric=='std':
+            fom = ma.std(fm)
+        if metric=='bin-med-std':
+            cad = self.dfcad
+            fm.fill_value = np.nan
+            cad['f'] = fm.filled()
+            g = cad.groupby('cadbin')
+            # Compute FOM, ignoring masked cadences
+            fom = np.median(g.std()['f']) 
+        return fom 
+
+    def solve_weights(self,metric):
+        # Set bounds
+        self.bounds = [self.weight_bounds]*self.nweights
+
+        # Construct cost and constraint functions
+        fom = lambda weights : self.figure_of_merit(weights,metric)
+        def f_total_constraint(weights):
+            return self.get_f_total(weights).sum() - self.f_total0_sum
+
         x0 = self.weights.copy()
-        print "initial fom = %f" % self.fom(x0)
-        res = optimize.fmin_slsqp(
-            self.fom,x0,eqcons=[self.fcons_weigthted_sum],bounds=self.bounds,
-            epsilon=0.01,iprint=1,iter=2000)
+        fom_initial = fom(x0)
+        res = optimize.fmin_slsqp( 
+            fom, x0, eqcons=[f_total_constraint], bounds=self.bounds,
+            epsilon=0.01, iprint=1, iter=2000)
 
-        print "final fom = %f" % self.fom(res)
+        fom_final = fom(res)
         self.weights = res
+
+        print "initial fom = %f" % fom_initial
+        print "final fom = %f" % fom_final
+        print "initial/final fom = %f" % (fom_initial/fom_final)
+        self.fom_final = fom_final
+        self.fom_initial = fom_initial
         return res
 
-    def get_flat(self):
-        flat = np.ones(self.flux[0].shape)
-        for i in range(self.npix):
+    def get_weights_frame(self):
+        """
+        Return an image with the current value of the weights
+        """
+
+        weights_frame = np.ones((self.nrow,self.ncol))
+        for i in range(self.nweights):
             r,c = self.pixels[i]
-            flat[r,c] = self.weights[i]
-        return flat
-        
-    def get_flux(self):
-        """
-        Return flux cube with current values of weights
-        """
-        return self.flux / self.get_flat()[np.newaxis,:,:]
+            weights_frame[r,c] = self.weights[i]
+        return weights_frame
 
-    def get_f_total2(self):
-        """
-        Like get f_total, but using using 
-        """
-        flux = self.get_flux()
-        f_total2 = np.zeros(self.npts)
-        for i in range(self.npts):
-            fluxtable, aux_dict = photutils.aperture_photometry(
-                flux[i],self.locxy,self.aperture)
-            f_total2[i] = fluxtable[0][0]
-        return f_total2
+    def to_pickle(self,filename):
+        with open(filename,'w') as file:
+            pickle.dump(self,file)
+        print "saveing to %s" % filename
+    
+    def to_hdf(self,filename):
+        f_old = ff.get_f_total(ff.weights0)
+        f_weighted = ff.get_f_total(ff.weights)
+        lc = dict(f_old= f_old, f_weighted= f_weighted, fmask=self.fmask)
+        lc = pd.DataFrame(lc)
+        lc = np.array(lc.to_records(index=False))
+        with h5plus.File(filename) as h5:
+            h5['lc'] = lc
+        print "saveing to %s" % filename
 
-    def fom2(self,weights):
+    def to_fits(self,filename):
         """
-        Return figure of merit given the current value of the weights
+        Produce a fits file that can be fed into pixel_decorrelation.py. Yes,
+        it's a really inefficient way of storing 10 numbers
         """
-        self.weights = weights
-        flux = self.get_f_total2()
-        fom = np.std(flux)
-        print weights,fom
-        return fom
+        hduL = fits.open(self.fn)
+        hduL[1].data['FLUX'] = hduL[1].data['FLUX'] * ff.get_weights_frame()
+        hduL.writeto(filename,clobber=True)
+        print "saveing to %s" % filename
 
-    def solve_weights2(self):
-        x0 = self.weights.copy()
-        print "initial fom = %f" % self.fom(x0)
-        res = optimize.fmin_slsqp(
-            self.fom2,x0,eqcons=[self.fcons_weigthted_sum],bounds=self.bounds,
-            epsilon=0.01,iprint=1,iter=2000)
+import h5plus
+cadmaskfile = os.path.join(os.environ['K2PHOTFILES'],'C0_fmask.csv')
+cadmask = pd.read_csv(cadmaskfile,index_col=0)
 
-        print "final fom = %f" % self.fom(res)
-        self.weights = res
-        return res
+if __name__ == "__main__":
+    p = ArgumentParser(description='Photometry By Flat-Fielding')
+    p.add_argument('pixelfile',type=str)
+    p.add_argument('outdir',type=str)
+    p.add_argument('--tmin',type=float,default=-np.inf)
+    p.add_argument('--tmax',type=float,default=np.inf)
+
+    args  = p.parse_args()
+    pixelfile = args.pixelfile
+    outdir = args.outdir
+    tlimits=[args.tmin,args.tmax]
+
+    imstack = ImageStack(pixelfile,tlimits=tlimits)
+    cut = imstack.df.query('dist < 3')
+    cut = cut.sort('fluxsum',ascending=False).iloc[:20]
+    pixels = np.array(cut['row col'.split()])
+    ff = FlatField(pixelfile,pixels,3,tlimits=tlimits)
+
+    ff.set_dxdy_by_registration()
+    cadmask = cadmask.ix[ff.cad]
+
+    ffm = copy.deepcopy(ff)
+    ffm.set_fmask(cadmask['fmask'])
+    
+    np.set_printoptions(precision=4)
+    fig,axL = subplots(nrows=1,sharex=True,sharey=True,figsize=(12,2))
+
+    methods = 'mad std bin-med-std'.split()
+    method = methods[2]
+    ff.weights = ff.weights0
+    ffm.weights = ffm.weights0
+
+    ff.solve_weights(method)
+    ffm.solve_weights(method)
+
+    f_old = ff.get_f_total(ff.weights0)
+    f_weighted = ff.get_f_total(ff.weights)
+    f_weighted_masked = ffm.get_f_total(ffm.weights)
+
+    fluxes = [f_old,f_weighted,f_weighted_masked]
+    how = 'original weighted weighted_masked'.split()
+    for f,how in zip(fluxes,how):
+        plot(f,label='(%s)' % (how))
+
+    legend(fontsize='x-small')
+    
+    basename = str(fits.open(ff.fn)[0].header['KEPLERID'])
+    basename = os.path.join(outdir,basename)
+
+    ff.to_pickle(basename+'.ff.%s.pickle'  % method)
+    ffm.to_pickle(basename+'.ffm.%s.pickle'  % method)
+
+    ff.to_hdf(basename+'.ff.%s.h5'  % method)
+    ffm.to_hdf(basename+'.ffm.%s.h5'  % method)
+
+    ff.to_fits(basename+'.ff.%s.fits'  % method)
+    ffm.to_fits(basename+'.ffm.%s.fits'  % method)
+
+    fig.set_tight_layout(True)
+    gcf().savefig(basename+'.ff.png')
+    
+    figure()
+    ffm.plot_frame(0)
+    title(basename+'.ff-frame.png')
+
