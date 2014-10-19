@@ -105,12 +105,26 @@ def read_cat(k2_camp='C0',return_targets=True):
 
     return cat
 
-def read_diag(k2_camp):
+def read_diag(k2_camp,nbin=20):
     """
-    Query the catalog for 20 stars in a given magnitude range
+    Read Diagnostic Stars
+
+    Query the catalog for nbin stars with different magnitude ranges
+
+    Parameters
+    ----------
+    k2_camp : string with campaign name
+    nbin : number of stars to return for a given magnitude range
+
+    Returns
+    -------
+    dfdiag : DataFrame with subset of catalog used for diagnostics
+
+    Usage
+    -----
+    
     """
     np.random.seed(0)
-    nbin = 20
     cat = read_cat(k2_camp=k2_camp)
 
     dfdiag = []
