@@ -306,7 +306,7 @@ class FlatField(ImageStack):
         it's a really inefficient way of storing 10 numbers
         """
         hduL = fits.open(self.fn)
-        hduL[1].data['FLUX'] = hduL[1].data['FLUX'] * ff.get_weights_frame()
+        hduL[1].data['FLUX'] = hduL[1].data['FLUX'] * self.get_weights_frame()
         hduL.writeto(filename,clobber=True)
         print "saveing to %s" % filename
 
