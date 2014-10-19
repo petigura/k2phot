@@ -13,11 +13,13 @@ from matplotlib import pylab as plt
 import pandas as pd
 from astropy.io import fits
 from photutils import CircularAperture,aperture_photometry
+from scipy import ndimage as nd
 
 import h5plus
 from pdplus import LittleEndian as LE
 import photometry
 from pixel_decorrelation import imshow2,get_star_pos,loadPixelFile,get_stars_pix,subpix_reg_stack
+from skimage import measure
 
 class ImageStack(object):
     def __init__(self,fn,tlimits=None):
@@ -177,8 +179,8 @@ class FlatField(ImageStack):
         for i in range(self.nweights):
             r,c = self.pixels[i]
             plt.text(c,r,i,va='center',ha='center',color='Orange')
-        ap = CircularAperture(aperlocxy,r=self.aperture[1])
-        ap.plot(color='Lime',lw=1.5,alpha=0.5)
+        apertures = CircularAperture([aperlocxy], r=self.radius)
+        apertures.plot(color='Lime',lw=1.5,alpha=0.5)
 
     def get_fpix(self):
         """
@@ -227,7 +229,7 @@ class FlatField(ImageStack):
         fom_initial = fom(x0)
         res = optimize.fmin_slsqp( 
             fom, x0, eqcons=[f_total_constraint], bounds=self.bounds,
-            epsilon=0.01, iprint=1, iter=2000)
+            epsilon=0.01, iprint=1,iter=200)
 
         fom_final = fom(res)
         self.weights = res
@@ -249,6 +251,39 @@ class FlatField(ImageStack):
             r,c = self.pixels[i]
             weights_frame[r,c] = self.weights[i]
         return weights_frame
+
+    def get_moments(self,i):
+        upsamp = 4
+        apcenter = self.get_aper_locxy(i)
+        frame = ma.masked_invalid(self.flux[i])
+        frame.fill_value = 0
+        frame = frame.filled()
+
+        apcenter*=upsamp
+        imz = nd.zoom(frame,upsamp)
+
+        nrowz,ncolz = imz.shape
+        rowz,colz = np.mgrid[:nrowz,:ncolz]
+        dist = np.sqrt((rowz - apcenter[0])**2 + 
+                       (colz - apcenter[1])**2 )
+        
+        imz = ma.masked_array(imz,dist > self.radius * upsamp)
+        imz.fill_value=0
+        imz = imz.filled()
+
+        # Compute the centroid
+        m = measure.moments(imz)
+        moments = pd.Series(dict(m10=m[0,1],m01=m[1,0]))
+        moments /= m[0,0]
+
+        # Compute central moments (second order)
+        mu = measure.moments_central(imz,moments['m10'],moments['m01'])
+        c_moments = pd.Series(
+            dict(mupr20=mu[2,0], mupr02=mu[0,2], mupr11=mu[1,1]) )
+        c_moments/=mu[0,0]
+        moments = pd.concat([moments,c_moments])
+        moments/=upsamp
+        return moments
 
     def to_pickle(self,filename):
         with open(filename,'w') as file:
