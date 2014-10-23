@@ -490,7 +490,7 @@ def computeCentroidTransit(time, flux, transitModel, cen1, cen2, ecen1, ecen2, m
     filtDeltaCen1 = cen1corrected / signal.medfilt(cen1corrected, medFiltWid) - 1.
     filtDeltaCen2 = cen2corrected / signal.medfilt(cen2corrected, medFiltWid) - 1.
     filtTransitModel = transitModel / signal.medfilt(transitModel, medFiltWid) - 1.
-    #filtTransitModel /= filtTransitModel.std()
+    filtTransitModel /= filtTransitModel.std() # <-- according to S. Bryson
 
     # Eq. 4:
     gamma1 = ((filtDeltaCen1) * filtTransitModel / ecen1**2).sum() / \
@@ -585,9 +585,8 @@ def computePixelTransit(input, data, transitModel, medFiltWid=47, rescaleErrors=
     if mask is None:
         mask = input.crudeApertureMask
 
-    # Appropriately pre-whiten and normalize the transit model:
-    filtTransitModel = transitModel / signal.medfilt(transitModel, medFiltWid) - 1.
-    #filtTransitModel /= filtTransitModel.std()
+    # S. Bryson says that we do *not* pre-whiten or normalize the transit model:
+    filtTransitModel = transitModel - 1. 
     denom = (filtTransitModel**2).sum()
     sqrtvec = np.ones(nobs) / np.sqrt(nobs)
     for irow in xrange(nrow):
