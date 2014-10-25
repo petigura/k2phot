@@ -1025,7 +1025,7 @@ def aperphot(fn, timekey=None, pos=[0,0], dap=[2,4,6], mask=None, verbose=False,
 
     return thisobs
 
-def psffiterr(xyoffset, psf, frame, w=None, scale=100, dframe=9, loc=None, verbose=False, retvec=False):
+def psffiterr(xyoffset, psf, frame, w=None, scale=100, dframe=9, loc=None, verbose=False, retvec=False, useModelCenter=False):
     """:USAGE:
          ::
 
@@ -1038,7 +1038,7 @@ def psffiterr(xyoffset, psf, frame, w=None, scale=100, dframe=9, loc=None, verbo
     # 2014-10-08 18:26 IJMC: Added 'retvec' option (for scipy.optimize.leastsq)
 
     out = psffit(psf, frame, loc=loc, w=w, scale=scale, dframe=dframe, \
-                     xoffs=[(xyoffset[0])], yoffs=[(xyoffset[1])], verbose=verbose, retvec=retvec)
+                     xoffs=[(xyoffset[0])], yoffs=[(xyoffset[1])], verbose=verbose, retvec=retvec, useModelCenter=useModelCenter)
     if retvec:
         ret = out
     else:
@@ -1046,7 +1046,7 @@ def psffiterr(xyoffset, psf, frame, w=None, scale=100, dframe=9, loc=None, verbo
 
     return ret
 
-def psffit(psf, frame, loc=None, w=None, scale=100, dframe=9, xoffs=None, yoffs=None, verbose=False, retvec=False):
+def psffit(psf, frame, loc=None, w=None, scale=100, dframe=9, xoffs=None, yoffs=None, verbose=False, retvec=False, useModelCenter=False):
     """
     Conduct simple PRF model-fitting at a specified grid of positions
 
@@ -1153,9 +1153,13 @@ def psffit(psf, frame, loc=None, w=None, scale=100, dframe=9, xoffs=None, yoffs=
     psfModelTooSmall = True
     while psfModelTooSmall:
         psf_x, psf_y = np.arange(psf.shape[0]), np.arange(psf.shape[1])
-        pycen = (psf_x*psf.sum(1)).sum()/psf.sum()
-        pxcen = (psf_y*psf.sum(0)).sum()/psf.sum()
-        #pycen, pxcen = (psf==psf.max()).nonzero()  # Slower!!
+        if useModelCenter:
+            pxcen = int(psf.shape[1]/2)
+            pycen = int(psf.shape[0]/2)
+        else:
+            psum = psf.sum()
+            pycen = (psf_x*psf.sum(1)).sum()/psum
+            pxcen = (psf_y*psf.sum(0)).sum()/psum
         pxmin = int(pxcen-(dpsf0-1)/2-exs)
         pxmax = int(pxcen+(dpsf0+1)/2+exs)
         pymin = int(pycen-(dpsf0-1)/2-exs)
@@ -1163,10 +1167,10 @@ def psffit(psf, frame, loc=None, w=None, scale=100, dframe=9, xoffs=None, yoffs=
         if verbose>0: print "shape & indices>>", psf.shape, pymin, pymax, pxmin, pxmax
         if pxmin<0 or pymin<0 or pxmax>=psf.shape[1] or pymax>=psf.shape[0]:
             psfModelTooSmall = True
-            psf = an.pad(psf, 2*psf.shape[0], 2*psf.shape[1])
+            psf = an.pad(psf, 3*psf.shape[0], 3*psf.shape[1])
         else:
             psfModelTooSmall = False
-        
+
 
     smpsf = psf[pymin:pymax, pxmin:pxmax]
 

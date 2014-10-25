@@ -2904,7 +2904,7 @@ def snr(data, axis=None, nsigma=None):
             stdr(data, axis=axis, nsigma=nsigma)
     return  ret
 
-def pad(inp, npix_rows, npix_cols=None):
+def pad(inp, npix_rows, npix_cols=None, copy=False):
     """Pads input matrix to size specified. 
     ::
 
@@ -2914,10 +2914,11 @@ def pad(inp, npix_rows, npix_cols=None):
     Written by J. Green @ JPL; converted to Python by I. Crossfield"""
     #2008-10-18 12:50 IJC: Converted from Matlab function
     # 2010-10-29 09:35 IJC: Moved from nsdata.py to analysis.py
+    # 2014-10-23 17:42 IJMC: Added 'copy' option; use input dtype.
 
     from numpy import imag, zeros, complex128
 
-    inp = array(inp, copy=True)
+    inp = array(inp, copy=copy)
     if len(inp.shape)==0:
         inp = inp.reshape((1,1))
     elif len(inp.shape)==1:
@@ -2926,10 +2927,7 @@ def pad(inp, npix_rows, npix_cols=None):
     if npix_cols==None:
         npix_cols = npix_rows
         
-    if (imag(inp)**2).sum()==0:
-        out = zeros((npix_rows, npix_cols))
-    else:
-        out = zeros((npix_rows, npix_cols), complex128)
+    out = zeros((npix_rows, npix_cols), inp.dtype)
     
     nrows, ncols  = inp.shape
 

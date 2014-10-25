@@ -1,6 +1,27 @@
 """
 Module for computing difference images in and out of transit
+
+Example usage (from command line):
+
+    python diffimage.py pixelFilename terraGridFilename
+
+Example usage (within Python):
+
+    import diffimage
+
+    pixelFilename = '/Users/ianc/proj/transit/kepler/data/ktwo202126876-c00_lpd-targ.fits'
+    terraGridFilename = '/Users/ianc/proj/transit/kepler/proc/202126876.grid.h5'
+    tlimits = [1862.45, np.inf]
+    P, t0, tdur = 10.3734632407, 1941.1116135904, 0.1673320053
+
+    dim = diffimage.DiffImage(pixelFilename, tlimits=tlimits)
+    dim.register_images()
+    dim.split_inout(P,t0,tdur)
+    diffimage.plot_diffimage(dim, gridfile=terraGridFilename)
+
 """
+# 2014-10-23 16:46 IJMC: Updated documentation.
+
 import cPickle as pickle
 from argparse import ArgumentParser
 
@@ -67,8 +88,8 @@ class DiffImage(object):
 
         # Compute shifts between registered images (should be nearly 0)
         dxs,dys = subpix_reg_stack(np.array(fluxs))
-        df['dcs'] = dxs # Handle the weird convention
-        df['drs'] = dys
+        df['dcolumns'] = dxs # Handle the weird convention
+        df['drows'] = dys
         self.df = df
 
     def split_inout(self,P,t0,tdur):
@@ -80,8 +101,8 @@ class DiffImage(object):
         self.P = P
         self.t0 = t0
         self.tdur = tdur
-        self.df_in = self.df[tlbl['tRegLbl']>=0]
-        self.df_out = self.df[tlbl['cRegLbl']>=0]
+        self.df_in = self.df[tlbl['tRegLabel']>=0]
+        self.df_out = self.df[tlbl['cRegLabel']>=0]
         self.tlbl = tlbl
 
         def med_fluxs(df):            
@@ -98,7 +119,7 @@ def plot_diffimage(dim,gridfile=None):
     sca(axL[0,0])
     title('Shifts from frame 0')
     plot(df.dc,df.dr,'.',label='Raw Images')
-    plot(df.dcs,df.drs,'.',
+    plot(df.dcolumns,df.drows,'.',
          label='Shifted Images\n4-th order poly\nshould be small')
     xlabel('$\delta$ column (pixels)')
     ylabel('$\delta$ row (pixels)')
@@ -113,8 +134,8 @@ def plot_diffimage(dim,gridfile=None):
         f = fit['f'][:]
 
         tlbl = transLabel(t,dim.P,0,dim.tdur,**tlblkw)
-        btrans = tlbl['tRegLbl'] >=0
-        bcont = tlbl['cRegLbl'] >=0
+        btrans = tlbl['tRegLabel'] >=0
+        bcont = tlbl['cRegLabel'] >=0
 
         plot(t[btrans],f[btrans],'.',label='In Transit')
         plot(t[bcont],f[bcont],'.',label='Out of Transit')
@@ -175,9 +196,9 @@ def transLabel(t,P,t0,tdur,cfrac=1,cpad=0):
     Parameters
     ----------
     t     : time series
-    P     : Period of transit
+    P     : Period of transit (in units of t; usually days)
     t0    : epoch of one transit
-    tdur  : transit duration
+    tdur  : Full transit duration (in units of t; usually days)
     cfrac : continuum defined as points between tdur * (0.5 + cpad)
             and tdur * (0.5 + cpad + cfrac) of transit midpoint cpad
     cpad  : how far away from the transit do we start the continuum
@@ -192,23 +213,25 @@ def transLabel(t,P,t0,tdur,cfrac=1,cpad=0):
     (transit or continuum) I label it with the number of the transit
     (starting at 0).
 
-    - tLbl      : Index closest to the center of the transit
-    - tRegLbl   : Transit region
-    - cRegLbl   : Continuum region
-    - totRegLbl : Continuum region and everything inside
+    - tLabel      : Index closest to the center of the transit
+    - tRegLabel   : Transit region
+    - cRegLabel   : Continuum region
+    - totRegLabel : Continuum region and everything inside
 
     Notes
     -----
-    tLbl might not be the best way to find the mid transit index.  In
-    many cases, dM[rec['tLbl']] will decrease with time, meaning there
+    tLabel might not be the best way to find the mid transit index.  In
+    many cases, dM[rec['tLabel']] will decrease with time, meaning there
     is a cumulative error that's building up.
 
     """
+    # 2014-10-23 16:40 IJMC: Updated documentation; cleaned nomenclature.
+    # CODE WRITTEN PREVIOUSLY BY EP.
 
     t = t.copy()
     t += t0shft(t,P,t0)
 
-    names = ['totRegLbl','tRegLbl','cRegLbl','tLbl']
+    names = ['totRegLabel','tRegLabel','cRegLabel','tLabel']
     rec  = np.zeros(t.size,dtype=zip(names,[int]*len(names)) )
     for n in rec.dtype.names:
         rec[n] -= 1
@@ -223,10 +246,10 @@ def transLabel(t,P,t0,tdur,cfrac=1,cpad=0):
         bc   = (t0dt > 0.5 + cpad) & (t0dt < 0.5 + cpad + cfrac)
         btot = t0dt < 0.5 + cpad + cfrac
         
-        rec['tRegLbl'][bt] = iTrans
-        rec['cRegLbl'][bc] = iTrans
-        rec['tLbl'][it]    = iTrans
-        rec['totRegLbl'][btot] = iTrans
+        rec['tRegLabel'][bt] = iTrans
+        rec['cRegLabel'][bc] = iTrans
+        rec['tLabel'][it]    = iTrans
+        rec['totRegLabel'][btot] = iTrans
 
         iTrans += 1 
         tmdTrans = iTrans * P

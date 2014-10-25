@@ -3456,10 +3456,12 @@ def textfig(textlist, **kw):
     # 2014-08-14 17:41 IJMC: Changed font family to 'monospace',
     #                        because 'Courier' led to bugs when saving
     #                        PDF figures.
+    # 2014-10-24 00:10 IJMC: Added 'fig' and 'ax' options.
+
     import pylab as py
 
     # Handle input options:
-    defaults = dict(horizontalalignment='left', fontsize=9, family='monospace', weight='bold')
+    defaults = dict(horizontalalignment='left', fontsize=9, family='monospace', weight='bold', fig=None, ax=None)
     if kw.has_key('figoptions'):
         figoptions = kw.pop('figoptions')
     else:
@@ -3475,8 +3477,13 @@ def textfig(textlist, **kw):
             kw[key] = defaults[key]
 
     # Generate figure and axis:
-    fig = py.figure(nextfig(), **figoptions)
-    ax = py.axes(**axoptions)
+    fig = kw.pop('fig')
+    if fig is None: 
+        fig = py.figure(nextfig(), **figoptions)
+
+    ax = kw.pop('ax')
+    if ax is None: 
+        ax = py.axes(**axoptions)
 
     nlines = len(textlist)
     vertpos = py.linspace(.95, .05, nlines)
@@ -3998,6 +4005,7 @@ def invChisq(dof, conf=0.683):
       ========= ================
       """
     # 2014-08-11 20:23 IJMC: Created
+    # 2014-10-23 22:26 IJMC: New starting guess for fsolve.
     from scipy.optimize import fsolve
     from scipy.stats import chisqprob
 
@@ -4005,7 +4013,7 @@ def invChisq(dof, conf=0.683):
         return 0
     else:
         def minFunc(dchi):    return chisqprob(dchi, dof) - (1.-conf)
-        out = fsolve(minFunc, 10)
+        out = fsolve(minFunc, dof)
         try: 
             ret = out[0]
         except:
