@@ -6,6 +6,7 @@ from argparse import ArgumentParser
 import copy
 import os.path
 
+import sqlite3
 import numpy as np
 from numpy import ma
 from scipy import optimize
@@ -21,6 +22,9 @@ import photometry
 from pixel_decorrelation import imshow2,get_star_pos,loadPixelFile,get_stars_pix,subpix_reg_stack
 from skimage import measure
 
+from pixel_decorrelation2 import plot_detrend
+
+
 class ImageStack(object):
     def __init__(self,fn,tlimits=None):
         pos_mode = 'wcs'
@@ -29,7 +33,7 @@ class ImageStack(object):
         cube,headers = loadPixelFile(fn,tlimits=tlimits)
         frame0 = ma.masked_invalid(cube['flux'])
         frame0 = ma.median(frame0,axis=0)
-        frame0.fill_value=0
+        frame0.fill_value = 0
         frame0 = frame0.filled()
         catcut, shift = get_stars_pix(fn,frame0)
         epic = headers[0]['KEPLERID']
@@ -41,6 +45,7 @@ class ImageStack(object):
         self.locxy = (xcen,ycen)
         self.locrc = (ycen,xcen) 
         self.flux = cube['FLUX'].astype(float)
+        self.t = cube['TIME'].astype(float)
         self.cad = cube['CADENCENO'].astype(int)
 
         # Number of frames, rows, and columns
@@ -73,11 +78,55 @@ class ImageStack(object):
         fbackground = self.get_fbackground() 
         self.flux -= fbackground[:,np.newaxis,np.newaxis]  
 
+def get_dfcad(cad, n_cad_per_bin=50):
+    """
+    Get cadence DataFrame
+
+    Parameters
+    ----------
+    cad : sequence of cadences
+    
+    Take an array of cadences and return a dataframe with the
+    following parameters
+
+    """
+
+    dcad = cad[1:] - cad[:-1]
+    assert np.max(dcad) < 10,'Long gap in cadences, binning no longer accurate'
+
+    cad = pd.DataFrame(dict(cad=cad))
+    cad['cadbin'] = -1
+    idxL = np.array(cad.index)
+    idxL = np.array_split(idxL,len(idxL)/n_cad_per_bin)
+    for idx in idxL:
+        cad.ix[idx,'cadbin'] = cad.ix[idx].iloc[0]['cad']
+    return cad    
+
+
+def get_bin_med_std(dfcad,x):
+    """
+    Get Median Standard Devation of Bins
+
+    Parameters 
+    ----------
+    dfcad : Pandas DataFrame with cadbin
+    x : array for which to compute the binned median std
+    """
+    
+    cad = dfcad.copy()
+    cad['x'] = x 
+    g = cad.groupby('cadbin')
+    # Compute FOM, ignoring masked cadences
+    fom = np.median(g.std()['x']) 
+    return fom
+
+
+
 class FlatField(ImageStack):
     """
     Stack of images that we can used to compute Flat Field
     """
-    def __init__(self,fn,pixels,radius,fmask=None,tlimits=None):
+    def __init__(self,fn,tlimits=None):
         """
         Parameters
         ----------
@@ -91,6 +140,31 @@ class FlatField(ImageStack):
         # Instantiate from ImageStack class
         super(FlatField,self).__init__(fn,tlimits=tlimits)
 
+        # Bin up cadences used to compute robust fom
+        self.dfcad = get_dfcad(self.cad)
+
+        # Other default values for array 
+        self.fmask = np.zeros(self.nframe).astype(bool)
+        self.dx = np.zeros(self.nframe)
+        self.dy = np.zeros(self.nframe)
+
+    def set_dxdy_by_registration(self):
+        assert hasattr(self,'weights')==False,\
+            "Must determine dx/dy before setting weights"
+        self.dx,self.dy = subpix_reg_stack(self.flux) 
+
+    def set_ff_parameters(self, pixels, radius, fmask=None):
+        """
+        Set the pixels used to for flat-fielding
+
+        Parameters
+        ----------
+        pixels : (nframe,2) array specifying the row and column values
+                 of the pixels to include in the flat field
+                 re-weighting
+        radius : radius of the moving circulare aperture used to compute flux
+        """
+
         # Create a 2D mask for weighted pixels.
         # True = pixel is used in the reweighting
         mask = np.zeros((self.nrow,self.ncol)).astype(bool)
@@ -101,31 +175,13 @@ class FlatField(ImageStack):
         self.mask = mask
         self.pixels = pixels
 
-        # Bin up cadences used to compute robust fom
-        cad = pd.DataFrame(dict(cad=self.cad))
-        cad['cadbin'] = -1
-        n_cad_per_bin = 50 
-        idxL = np.array(cad.index)
-        idxL = np.array_split(idxL,len(idxL)/n_cad_per_bin)
-        for idx in idxL:
-            cad.ix[idx,'cadbin'] = cad.ix[idx].iloc[0]['cad']
-
-        self.dfcad = cad
-
-        self.radius = radius
-
-        # Option to mask out points for figure of merit
-        self.fmask = np.zeros(self.nframe).astype(bool)
-
         # Set initial weights to unity
         self.weights0 = np.ones(self.nweights) 
         self.weights = self.weights0.copy()
-
-        # Default dx,dy
-        self.dx = np.zeros(self.nframe)
-        self.dy = np.zeros(self.nframe)
-
+        self.radius = radius
         self.fpix = self.get_fpix()
+        if type(fmask)!=type(None):
+            self.fmask = fmask 
         self._update_fixed()
         
     def _update_fixed(self):
@@ -136,14 +192,6 @@ class FlatField(ImageStack):
         self.f_total0 = self.get_f_total(self.weights)
         self.f_total0_sum = ma.sum(self.f_total0)
 
-    def set_fmask(self,fmask):
-        self.fmask = fmask
-        self._update_fixed()
-        
-    def set_dxdy_by_registration(self):
-        self.dx,self.dy = subpix_reg_stack(self.flux) 
-        self._update_fixed()
-
     def get_f_non_weighted(self):
         """
         Return photometry for pixels that are not re-weighted
@@ -153,7 +201,6 @@ class FlatField(ImageStack):
             locxy = self.get_aper_locxy(i)
             frame = self.flux[i]
             apertures = CircularAperture([locxy], r=self.radius)
-
             fluxtable = aperture_photometry(frame, apertures, mask=self.mask)
             f_non_weighted[i] = fluxtable[0][0]
         return f_non_weighted
@@ -161,26 +208,12 @@ class FlatField(ImageStack):
     def get_aper_locxy(self,i):
         """
         For frame i, return the xy location of aperture center
+        Should just be a property of the frame object
         """
         locxy = np.copy(self.locxy)
         locxy[0]+=self.dx[i]
         locxy[1]+=self.dy[i]
         return locxy
-
-    def plot_frame(self,i):
-        aperlocxy = self.get_aper_locxy(i)
-        print aperlocxy
-        logflux = np.log10(self.flux[i])
-        logflux = ma.masked_invalid(logflux)
-        logflux.mask = logflux.mask | (logflux < 0)
-        logflux.fill_value = 0
-        logflux = logflux.filled()
-        imshow2(logflux)
-        for i in range(self.nweights):
-            r,c = self.pixels[i]
-            plt.text(c,r,i,va='center',ha='center',color='Orange')
-        apertures = CircularAperture([aperlocxy], r=self.radius)
-        apertures.plot(color='Lime',lw=1.5,alpha=0.5)
 
     def get_fpix(self):
         """
@@ -208,12 +241,9 @@ class FlatField(ImageStack):
         if metric=='std':
             fom = ma.std(fm)
         if metric=='bin-med-std':
-            cad = self.dfcad
             fm.fill_value = np.nan
-            cad['f'] = fm.filled()
-            g = cad.groupby('cadbin')
-            # Compute FOM, ignoring masked cadences
-            fom = np.median(g.std()['f']) 
+            fm.filled()
+            fom = get_bin_med_std(self.dfcad,fm.filled())
         return fom 
 
     def solve_weights(self,metric):
@@ -253,6 +283,10 @@ class FlatField(ImageStack):
         return weights_frame
 
     def get_moments(self,i):
+        """
+        Return moments from frame:
+        Future work: This should be a method on a FrameObject
+        """
         upsamp = 4
         apcenter = self.get_aper_locxy(i)
         frame = ma.masked_invalid(self.flux[i])
@@ -285,6 +319,26 @@ class FlatField(ImageStack):
         moments/=upsamp
         return moments
 
+    def plot_frame(self,i):
+        """
+        Should be a method of frame object
+        """
+        aperlocxy = self.get_aper_locxy(i)
+        print aperlocxy
+        logflux = np.log10(self.flux[i])
+        logflux = ma.masked_invalid(logflux)
+        logflux.mask = logflux.mask | (logflux < 0)
+        logflux.fill_value = 0
+        logflux = logflux.filled()
+        imshow2(logflux)
+        for i in range(self.nweights):
+            r,c = self.pixels[i]
+            plt.text(c,r,i,va='center',ha='center',color='Orange')
+        apertures = CircularAperture([aperlocxy], r=self.radius)
+        apertures.plot(color='Lime',lw=1.5,alpha=0.5)
+
+    ## IO ##
+
     def to_pickle(self,filename):
         with open(filename,'w') as file:
             pickle.dump(self,file)
@@ -306,14 +360,39 @@ class FlatField(ImageStack):
         it's a really inefficient way of storing 10 numbers
         """
         hduL = fits.open(self.fn)
-        hduL[1].data['FLUX'] = hduL[1].data['FLUX'] * self.get_weights_frame()
+        weights_frame = self.get_weights_frame()
+        hduL[1].data['FLUX'] = hduL[1].data['FLUX'] * weights_frame
         hduL.writeto(filename,clobber=True)
         print "saveing to %s" % filename
 
 cadmaskfile = os.path.join(os.environ['K2PHOTFILES'],'C0_fmask.csv')
 cadmask = pd.read_csv(cadmaskfile,index_col=0)
 
+
+def dict2insert(d,table):
+    names = str(tuple(d.keys())).replace("'","")
+    strtup = "("+("?, "*len(d.keys()))[:-2]+")"
+    sqlcmd = 'INSERT INTO %s %s VALUES %s' % (table,names,strtup)
+    values = tuple(d.values())
+    return sqlcmd,values
+
+def to_sql(con,stard,lc):
+    """
+    Output important parameters to sql database
+    """
+    cur = con.cursor()
+    sqlcmd,values = dict2insert(stard,'star')
+    cur.execute(sqlcmd,values)
+    for i in range(len(lc)):
+        d = dict(lc.iloc[i])
+        sqlcmd,values = dict2insert(d,'phot')
+        cur.execute(sqlcmd,values)
+    con.commit()
+    con.close()
+
 if __name__ == "__main__":
+    np.set_printoptions(precision=4)
+
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pylab as plt
@@ -321,64 +400,88 @@ if __name__ == "__main__":
     p = ArgumentParser(description='Photometry By Flat-Fielding')
     p.add_argument('pixelfile',type=str)
     p.add_argument('outdir',type=str)
+    p.add_argument('dbfile',type=str)
     p.add_argument('--tmin',type=float,default=-np.inf)
     p.add_argument('--tmax',type=float,default=np.inf)
 
     args  = p.parse_args()
     pixelfile = args.pixelfile
     outdir = args.outdir
+    dbfile = args.dbfile
     tlimits=[args.tmin,args.tmax]
 
     imstack = ImageStack(pixelfile,tlimits=tlimits)
     cut = imstack.df.query('dist < 3')
     cut = cut.sort('fluxsum',ascending=False).iloc[:20]
     pixels = np.array(cut['row col'.split()])
-    ff = FlatField(pixelfile,pixels,3,tlimits=tlimits)
 
+    ff = FlatField(pixelfile,tlimits=tlimits)
     ff.set_dxdy_by_registration()
-    cadmask = cadmask.ix[ff.cad]
+    fmask = np.array(cadmask.ix[ff.cad]['fmask'])
 
-    ffm = copy.deepcopy(ff)
-    ffm.set_fmask(cadmask['fmask'])
-    
-    np.set_printoptions(precision=4)
-
-    methods = 'mad std bin-med-std'.split()
-    method = methods[2]
-    ff.weights = ff.weights0
-    ffm.weights = ffm.weights0
-
+    ff.set_ff_parameters(pixels,3,fmask=fmask)
+    method = 'bin-med-std'
     ff.solve_weights(method)
-    ffm.solve_weights(method)
 
-    f_old = ff.get_f_total(ff.weights0)
-    f_weighted = ff.get_f_total(ff.weights)
-    f_weighted_masked = ffm.get_f_total(ffm.weights)
+    moments = map(ff.get_moments,range(ff.nframe))
+    lc = pd.DataFrame(moments)
+    lc['f_unweighted'] = ff.get_f_total(ff.weights0)
+    lc['f_weighted'] = ff.get_f_total(ff.weights)
+    lc['fmask'] = ff.fmask.astype(int)
+    lc['cad'] = ff.cad
+    lc['t'] = ff.t
+    lc['dx'] = ff.dx
+    lc['dy'] = ff.dy
 
-    fluxes = [f_old,f_weighted,f_weighted_masked]
-    how = 'original weighted weighted_masked'.split()
+    starname = str(fits.open(ff.fn)[0].header['KEPLERID'])
+    lc['starname'] = starname
 
-    basename = str(fits.open(ff.fn)[0].header['KEPLERID'])
+    basename = starname
     basename = os.path.join(outdir,basename)
 
+    stard = dict(pd.Series(ff.weights).describe()['count min max std'.split()])
+    stard = dict([ ('weights_%s' % k,stard[k]) for k in stard.keys() ])
+    stard['starname'] = starname
+    fitsfn = basename+'.ff.%s.fits' % method
     ff.to_pickle(basename+'.ff.%s.pickle'  % method)
-    ffm.to_pickle(basename+'.ffm.%s.pickle'  % method)
-
     ff.to_hdf(basename+'.ff.%s.h5'  % method)
-    ffm.to_hdf(basename+'.ffm.%s.h5'  % method)
+    ff.to_fits(fitsfn)
 
-    ff.to_fits(basename+'.ff.%s.fits'  % method)
-    ffm.to_fits(basename+'.ffm.%s.fits'  % method)
+    if not os.path.isfile(args.dbfile):
+        for schemafile in ['phot_schema.sql','star_schema.sql']:
+            schemafile = os.path.join(
+                os.environ['K2PHOT_DIR'],'code/py',schemafile)
+            with open(schemafile) as f:
+                schema = f.read()
+            con = sqlite3.connect(args.dbfile)
+            cur = con.cursor()
+            cur.execute(schema)
+            con.commit()
+            con.close()
+        
+    # Read in the output file and compute aperture photmetry using
+    # different radii. There is a more elegant way to do this!
+    ff2 = FlatField(fitsfn,tlimits=tlimits)
+    pixels = [] # No pixels are reweighted here:
+    for radius in range(2,8):
+        ff2.set_ff_parameters(pixels,radius,fmask=lc['fmask'])
+        lc['f_weighted%i' % radius] = ff2.f_total0
 
-    fig,axL = plt.subplots(nrows=1,sharex=True,sharey=True,figsize=(12,2))
-    for f,how in zip(fluxes,how):
-        plt.plot(f,label='(%s)' % (how))
-    plt.legend(fontsize='x-small')
+    con = sqlite3.connect(dbfile)
+    to_sql(con,stard,lc)
+
+    h5file = '%s.ff.h5' % basename
+    lc.to_hdf(h5file,'lc')
+    pd.Series(stard).to_hdf(h5file,'stard')
     
-    fig.set_tight_layout(True)
+    # Plotting
+    columns = 'f_unweighted f_unweighted f_weighted'.split()
+    plot_detrend(lc,columns)
     plt.gcf().savefig(basename+'.ff.png')
+
     
     plt.figure()
-    ffm.plot_frame(0)
-    plt.title(basename+'.ff-frame.png')
+    ff.plot_frame(0)
+    plt.gcf().savefig(basename+'.ff-frame.png')
+
 

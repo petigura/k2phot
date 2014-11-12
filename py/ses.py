@@ -80,18 +80,27 @@ def ses_stats(fm):
     Given a light curve what is the noise level on different timescales?
     """
     dL = []
+
+    def ma_mad(x):
+        fom = ma.median(ma.abs(x))
+        if type(fom)==type(fm):
+            fom = float(fom)
+        return fom
+
+    ma_std = lambda x : ma.std(x)
     for twd in [1,4,6,8,12]:
-        fom = ma.std(running_mean(fm,twd))
+        fom = ma_std(running_mean(fm,twd))
         dL.append(['rms_%i-cad-mean' % twd, fom ,twd])
 
-        fom = ma.std(mtd(fm,twd))
+        fom = ma_std(mtd(fm,twd))
         dL.append(['rms_%i-cad-mtd' % twd, fom,twd])
 
-        fom = ma.median(ma.abs(running_mean(fm,twd)))
+        fom = ma_mad(running_mean(fm,twd))
         dL.append(['mad_%i-cad-mean' % twd, fom ,twd])
 
-        fom = ma.median(ma.abs(mtd(fm,twd)))
+        fom = ma_mad(mtd(fm,twd))
         dL.append(['mad_%i-cad-mtd' % twd, fom,twd])
+
 
     dL = pd.DataFrame(dL,columns='name value twd'.split())
     dL['value']*=1e6
