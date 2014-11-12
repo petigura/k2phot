@@ -478,7 +478,6 @@ if __name__ == "__main__":
     columns = 'f_unweighted f_unweighted f_weighted'.split()
     plot_detrend(lc,columns)
     plt.gcf().savefig(basename+'.ff.png')
-
     
     plt.figure()
     ff.plot_frame(0)
