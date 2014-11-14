@@ -1,11 +1,15 @@
-
-
-
 import os
-path_pointing = os.path.join(os.environ['K2PHOTFILES'],'c0_p2_pointing.txt')
-from astropy.time import Time
-pntcad = 5./60/24
 
+from sklearn.gaussian_process import GaussianProcess
+from pixel_decorrelation2 import lc_to_X,fmad
+import pandas as pd
+
+from astropy.time import Time
+import numpy as np
+
+
+path_pointing = os.path.join(os.environ['K2PHOTFILES'],'c0_p2_pointing.txt')
+pntcad = 5./60/24
 
 def parse_time(x):
     """
@@ -68,10 +72,6 @@ def merge_lc_pointing(lc,pnt):
     lc2 = pd.merge(lc,pntmean,left_index=True,right_index=True)
     lc2['pmask'] = lc2.pmask > 0 
     return lc2
-
-from pixel_decorrelation2 import lc_to_X
-from sklearn.gaussian_process import GaussianProcess
-from pixel_decorrelation2 import fmad
 
 def decorrelate_theta(lc,plot=True):
     """
