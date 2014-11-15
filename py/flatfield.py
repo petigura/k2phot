@@ -10,7 +10,7 @@ import sqlite3
 import numpy as np
 from numpy import ma
 from scipy import optimize
-from matplotlib import pylab as plt
+
 import pandas as pd
 from astropy.io import fits
 from photutils import CircularAperture,aperture_photometry
@@ -21,6 +21,7 @@ from pdplus import LittleEndian as LE
 import photometry
 from pixel_decorrelation import imshow2,get_star_pos,loadPixelFile,get_stars_pix,subpix_reg_stack
 from skimage import measure
+from matplotlib import pylab as plt 
 
 from pixel_decorrelation2 import plot_detrend
 
@@ -119,8 +120,6 @@ def get_bin_med_std(dfcad,x):
     # Compute FOM, ignoring masked cadences
     fom = np.median(g.std()['x']) 
     return fom
-
-
 
 class FlatField(ImageStack):
     """
@@ -368,7 +367,6 @@ class FlatField(ImageStack):
 cadmaskfile = os.path.join(os.environ['K2PHOTFILES'],'C0_fmask.csv')
 cadmask = pd.read_csv(cadmaskfile,index_col=0)
 
-
 def dict2insert(d,table):
     names = str(tuple(d.keys())).replace("'","")
     strtup = "("+("?, "*len(d.keys()))[:-2]+")"
@@ -392,10 +390,6 @@ def to_sql(con,stard,lc):
 
 if __name__ == "__main__":
     np.set_printoptions(precision=4)
-
-    import matplotlib
-    matplotlib.use('Agg')
-    import matplotlib.pylab as plt
 
     p = ArgumentParser(description='Photometry By Flat-Fielding')
     p.add_argument('pixelfile',type=str)

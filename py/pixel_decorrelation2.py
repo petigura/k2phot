@@ -1,19 +1,18 @@
-#from matplotlib.pylab import *
-import matplotlib.pylab as plt
-import numpy as np
-from numpy import ma
-
-from sklearn.decomposition import PCA,FastICA
-import pandas as pd
-from photometry import r2fm
-from sklearn.gaussian_process import GaussianProcess
-from scipy import optimize
-
-from ses import ses_stats
-from argparse import ArgumentParser
 import os
 import cPickle as pickle
 import sqlite3
+from argparse import ArgumentParser
+
+import numpy as np
+from numpy import ma
+import pandas as pd
+from sklearn.gaussian_process import GaussianProcess
+from sklearn.decomposition import PCA,FastICA
+from scipy import optimize
+import matplotlib.pylab as plt
+
+from photometry import r2fm
+from ses import ses_stats
 
 def lc_to_X(lc,columns):
     """
@@ -45,6 +44,9 @@ class decorlc(object):
         # Protect the input
         self.lc_inp = lc.copy()
         lc = lc['t cad f fmask dx dy'.split()]
+
+        # Save a copy of the not normalized flux
+        lc['f_not_normalized'] = lc['f']
         lc['f'] /= lc.f.median()
         lc['f'] -= 1
 
@@ -305,8 +307,6 @@ def decorrelate_position_and_time_wrap(lc0):
     return dc
 
 if __name__ == "__main__":
-
-
     p = ArgumentParser(description='Difference Images')
     p.add_argument('outdir',type=str)
     p.add_argument('--h5file',type=str,default='')
