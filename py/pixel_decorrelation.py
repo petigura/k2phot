@@ -109,9 +109,10 @@ import k2_catalogs
 from matplotlib.gridspec import GridSpec
 from image_registration import register_images
 from pixel_io import loadPixelFile
+import lightcurve_diagnostics as ld
 
 try:
-    import _chi2  # Leverage my c-based chi-squared routine:
+    import _chi2  # Leverage IJMC's c-based chi-squared routine:
     c_chisq = True
 except:
     c_chisq = False
@@ -139,6 +140,7 @@ def main(argv=None):
     # 2014-09-30 16:49 IJMC: Added default to xymeth
     # 2014-10-08 13:19 IJMC: Now use correct EPIC & KepMag when
     #                        '--epic' option is set.
+    # 2014-11-17 13:24 IJMC: Now '--epic=all' is available.
     np.set_printoptions(precision=3)
 
     if argv is None:
@@ -212,7 +214,7 @@ def main(argv=None):
         p.add_option('--minrad', dest='minrad', type='float', 
                      help='Minimum aperture radius (pixels)', default=1.5)
         p.add_option('--maxrad', dest='maxrad', type='float', 
-                     help='Maximum aperture radius (pixels)', default=15)
+                     help='Maximum aperture radius (pixels). Set -1 for auto-set.', default=-1)
         
         # If the apertures are known beforehand, we can enter them in
         # here by hand
@@ -287,8 +289,11 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
         xymeth = options.xymeth
 
         tlimits = [tmin, tmax]
+        dkepmag = 10
+        min_maxrad = 2.5
 
         shift = [0, 0]
+
 
         if options.aper:
             xcen,ycen = get_star_pos(fn,mode='aper')
@@ -299,7 +304,7 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
 
             cube,headers = loadPixelFile(fn, tlimits=tlimits)
 
-            if options.epic!='':
+            if options.epic!='' and options.epic!='all':
                 epic = int(options.epic)
                 headers[0]['KEPLERID'] = epic
 
@@ -308,9 +313,10 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
             frame0 = ma.median(frame0,axis=0)
             frame0.fill_value=0
             frame0= frame0.filled()
-            catcut, shift = get_stars_pix(fn,frame0)
+            catcut, shift = get_stars_pix(fn,frame0, dkepmag=dkepmag)
             epic = headers[0]['KEPLERID']
             xcen,ycen = catcut.ix[epic]['pix0 pix1'.split()]
+
         else:
             xcen     = options.xcen
             ycen     = options.ycen
@@ -323,61 +329,89 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
         if not os.path.isfile(fn):
             fn = _data + fn
 
+
     # Setup Pool for multiprocessing support:
     if nthreads==1:
         pool = None
     else:
         pool = Pool(processes=nthreads)
+
     
+    # Setup to allow multiple runs on a singe file:
+    if options.wcs:
+        if options.epic=='all':
+            all_index = (np.array(catcut.pix0) > 1) * (np.array(catcut.pix1) > 1)*\
+                (np.array(catcut.pix0) < (frame0.shape[0]-2)) * \
+                (np.array(catcut.pix1) < (frame0.shape[1]-2))
+            epics = catcut.index[all_index]
+        else:
+            epics = [epic]
+        xcens = [catcut.ix[ep]['pix0'] for ep in epics]
+        ycens = [catcut.ix[ep]['pix1'] for ep in epics]
+        if maxrad<0:
+            if verbose:
+                print "Input 'maxrad' is <0; automatically setting maxrads..."
+            maxrads0 = np.array([estimateMaxAperRadius(fn, epic=ep, doplot=options.plotalot, dkepmag=dkepmag, verbose=verbose) for ep in epics]).ravel()
+            maxrads = np.vstack((maxrads0, np.ones(len(epics))*min_maxrad)).max(0)
+        else:
+            maxrads = [maxrad]*len(epics)
+    else:  # We're not using WCS... vestigial functionality
+        maxrads = [maxrad]
+        xcens = [xcen]
+        ycens = [ycen]
+
+    ntarg = len(xcens)
     # Run the code:
     #
     # The photometry routines expect the flipped coordinates !!!!!
     # 
-    loc = (xcen,ycen)
-    loc_flip = (loc[1],loc[0]) 
-    # Option here to manually specify the apertures
-    if apertures!="":
-        apertures = apertures.split(',')
-        apertures = [float(a) for a in apertures]
-        results = runPixelDecorrelation(
-            fn, loc_flip, apertures, apertureMode=apertureMode, resamp=resamp,
-            nordGeneralTrend=nordGeneralTrend, verbose=verbose, 
-            plotalot=plotalot, xy=None, prfFrac=None, tlimits=tlimits, 
-            pool=pool, gausscen=gausscen,xymeth=xymeth, decorMode=decorMode)
-    else:
-        results = runOptimizedPixelDecorrelation(
-            fn, loc_flip, apertureMode=apertureMode, resamp=resamp, 
-            nordGeneralTrend=nordGeneralTrend, pool=pool, tlimits=tlimits, 
-            verbose=verbose, plotalot=0, minrad=minrad, maxrad=maxrad, 
-            gausscen=gausscen,xymeth=xymeth, decorMode=decorMode)
+    for ind in np.argsort(catcut.ix[epics]['kepmag']):
+        loc = (xcens[ind],ycens[ind])
+        loc_flip = (loc[1],loc[0]) 
+        # Option here to manually specify the apertures
+        if apertures!="":
+            apertures = apertures.split(',')
+            apertures = [float(a) for a in apertures]
+            results = runPixelDecorrelation(
+                fn, loc_flip, apertures, apertureMode=apertureMode, resamp=resamp,
+                nordGeneralTrend=nordGeneralTrend, verbose=verbose, 
+                plotalot=plotalot, xy=None, prfFrac=None, tlimits=tlimits, 
+                pool=pool, gausscen=gausscen,xymeth=xymeth, decorMode=decorMode)
+        else:
+            results = runOptimizedPixelDecorrelation(
+                fn, loc_flip, apertureMode=apertureMode, resamp=resamp, 
+                nordGeneralTrend=nordGeneralTrend, pool=pool, tlimits=tlimits, 
+                verbose=verbose, plotalot=0, minrad=minrad, maxrad=maxrads[ind], 
+                gausscen=gausscen,xymeth=xymeth, decorMode=decorMode)
 
-    results.argv = argv
-    results.epic = results.headers[0]['KEPLERID']
-    if options.wcs:
-        results.catcut = catcut
-        if options.epic!='':
-            results.epic = int(options.epic)
-            results.kepmag = results.catcut.ix[results.epic].kepmag
-    savefile = '%s%09d' % (_save, results.epic)
+        results.argv = argv
+        results.epic = epics[ind] #results.headers[0]['KEPLERID']
+        if options.wcs:
+            results.catcut = catcut
+            if options.epic!='':
+                results.epic = int(results.epic)
+                results.kepmag = results.catcut.ix[results.epic].kepmag
+        savefile = '%s%09d' % (_save, results.epic)
 
 
-    # Save everything to disk:
-    picklefn = savefile + '.pickle'
-    fitsfn = savefile + '.fits'
-        
-    if output.count('pdict')==1:
-        tools.savepickle(tools.obj2dict(results), picklefn)
-    if output.count('pobj')==1:
-        tools.savepickle(results, picklefn)
-    if output.count('fits')==1:
-        to_fits(results,fitsfn)
+        # Save everything to disk:
+        picklefn = savefile + '.pickle'
+        fitsfn = savefile + '.fits'
 
-    # Plot pretty pictures & print to disk:
-    plotPixelDecorResults(results, fs=fs, shift=[0,0])
-    pdffn = savefile + '.pdf'
+        if output.count('pdict')==1:
+            tools.savepickle(tools.obj2dict(results), picklefn)
+        if output.count('pobj')==1:
+            tools.savepickle(results, picklefn)
+        if output.count('fits')==1:
+            to_fits(results,fitsfn)
 
-    tools.printfigs(pdffn, pdfmode=plotmode, verbose=verbose)
-    py.close('all')
+        # Plot pretty pictures & print to disk:
+        plotPixelDecorResults(results, fs=fs, shift=[0,0])
+        pdffn = savefile + '.pdf'
+
+        tools.printfigs(pdffn, pdfmode=plotmode, verbose=verbose)
+        py.close('all')
+
     return
 
 # Table with fits column description
@@ -539,7 +573,7 @@ def runOptimizedPixelDecorrelation(fn, loc, apertures=None, apertureMode='circul
             inner_ap_radii = np.concatenate((inner_ap_radii, 6*1.2**np.arange(nlog+1)))
             inner_ap_radii = inner_ap_radii[inner_ap_radii <= maxrad]
         if inner_ap_radii.size < 3:
-            inner_ap_radii = np.linspace(minrad, maxrad, 3)
+            inner_ap_radii = np.linspace(minrad, maxrad, 4)
         prfFrac = [None ] * len(inner_ap_radii)
 
     elif apertureMode=='prf':
@@ -794,6 +828,7 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
     # 2014-09-06 15:09 IJMC: Added aperturemode and prfFrac options.
     # 2014-10-02 15:11 IJMC: Mask invalid 'edata' values.
     # 2014-10-06 14:19 IJMC: Added decorMode option.
+    # 2014-11-16 17:59 IJMC: We were computing photometry twice; commented one out.
 
     apertureMode = apertureMode.lower()
     if verbose: 
@@ -811,8 +846,8 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
     data, edata = preconditionDataCubes(data, edata)
 
     # Extract photometry (add eventual hook for PRF fitting):
-    flux, eflux, bg, testphot = aperturePhotometryFromPixelData(
-        data, loc, apertures, resamp=resamp, verbose=verbose, retall=True)
+    #flux, eflux, bg, testphot = aperturePhotometryFromPixelData(
+    #    data, loc, apertures, resamp=resamp, verbose=verbose, retall=True)
 
     # Extract photometry:
     prfphot = False
@@ -859,15 +894,15 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
         k = 'xcorr1D'
         if xymeth.count(k) > 0:
             dx, dy = xcorrStack(data, npix_corr=3)
-            x = testphot.position[0] - dx
-            y = testphot.position[1] - dy
+            x = testphot.position[0] + dx
+            y = testphot.position[1] + dy
             xys[k] = (x,y)
 
         k = 'xcorr2D'
         if xymeth.count(k) > 0:
             dx, dy = subpix_reg_stack(data)
-            x = testphot.position[0] - dx
-            y = testphot.position[1] - dy
+            x = testphot.position[0] + dx
+            y = testphot.position[1] + dy
             xys[k] = (x,y)
 
         k = 'cent'
@@ -891,6 +926,13 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
     else:
         xys = [(xy[0], xy[1])]
 
+
+    # Try to make the apertures follow the target motion:
+    #if apertureMode[0:4]=='circ':
+    #    flux, eflux, bg, testphot = aperturePhotometryFromPixelData(data, np.vstack(xys['xcorr2D']), apertures, resamp=resamp, verbose=verbose, retall=True)
+    #    outs = [aperturePhotometryFromPixelData(data[[iii]], np.vstack(xys['xcorr2D'])[:,[[iii]]], apertures, resamp=resamp, verbose=verbose, retall=True) for iii in xrange(data.shape[0])]
+        #pdb.set_trace()
+
     # Detrend the flux, picking optimal values for all parameters:
     if decorMode==1 or ('1' in decorMode):
         out = detrendFluxArcMotion(
@@ -905,7 +947,6 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
             goodvals=None, plotalot=plotalot, verbose=verbose, pool=pool)
         decorMode = '2D'
 
-    #pdb.set_trace()
     # Stick everything into a big container-object:
     output = baseObject()
     output.headers = headers
@@ -971,8 +1012,12 @@ def aperturePhotometryFromPixelData(stack, loc, apertures, resamp=1, recentroid=
 
     if stack.ndim==2:
         stack = stack.reshape((1,)+stack.shape)
-
     nobs = stack.shape[0]
+    if np.array(loc).squeeze().ndim==1:
+        loc = np.array(loc).reshape(2, 1)
+        loc = np.tile(loc, (1, nobs))
+
+    loc0 = loc.mean(1)
     frame0 = np.median(stack, axis=0)
 
 
@@ -984,25 +1029,26 @@ def aperturePhotometryFromPixelData(stack, loc, apertures, resamp=1, recentroid=
         dap = None
         mask = apertures
 
-    phot0 = phot.aperphot(frame0, pos=loc, dap=dap, mask=mask, resamp=1, 
+    phot0 = phot.aperphot(frame0, pos=loc0, dap=dap, mask=mask, resamp=1, 
                           retfull=True)
     if recentroid:
-        loc = refineCentroid(frame0, apertures, loc=loc, mask=None, 
+        loc0 = refineCentroid(frame0, apertures, loc=loc0, mask=None, 
                              verbose=verbose)
 
 
-    phot1 = phot.aperphot(frame0, pos=loc, dap=dap, mask=mask, resamp=1, retfull=True)
-    phot4mask = phot.aperphot(frame0, pos=loc, dap=dap, mask=mask, resamp=resamp, retfull=True)
+    phot1 = phot.aperphot(frame0, pos=loc0, dap=dap, mask=mask, resamp=1, retfull=True)
+    phot4mask = phot.aperphot(frame0, pos=loc0, dap=dap, mask=mask, resamp=resamp, retfull=True)
     if verbose>=2:
         py.figure()
         py.imshow(np.log10(np.abs(1.+phot1.mask_targ * (phot1.frame-phot1.bg))))
         py.colorbar()
         py.title('log10(frame)')
 
-    if mask is None:
+    if mask is None and (loc.std(1)==0).all():
         mask = phot4mask.mask_targ + phot4mask.mask_sky*2.0
 
-    phots = [phot.aperphot(frame, pos=loc, dap=dap, mask=mask, resamp=resamp, retfull=False) for frame in stack]
+
+    phots = [phot.aperphot(stack[ii], pos=loc[:,ii], dap=dap, mask=mask, resamp=resamp, retfull=True) for ii in xrange(nobs)]
 
     flux = np.zeros(nobs, dtype=float)
     eflux = np.zeros(nobs, dtype=float)
@@ -1200,7 +1246,7 @@ def getCentroidsStandard(stack, mask=None, bg=None, strictlim=True):
 
     return x2, y2
 
-def subpix_reg_stack(stack, maxoff=2):
+def subpix_reg_stack(stack, maxoff=2, refmode=0):
     """
     Subpixel Registration Image Stack
 
@@ -1210,12 +1256,15 @@ def subpix_reg_stack(stack, maxoff=2):
     maxoff : Maximum offset allowed. Passed to `register_images.` Also
              creates a buffer region for each image in the stack
              besides the reference frame.
+    refmode : What to use as the 'template' image. If an integer, use
+              stack[refmode]; other options are 'mean' or 'median'.
 
     Returns
     -------
     dx, dy : tuple of 1D arrays
     """
- 
+    # 2014-10-24 21:08 IJMC: Added refmode
+
     stack = stack.copy()
     stack = ma.masked_array(stack,True)
 
@@ -1230,10 +1279,17 @@ def subpix_reg_stack(stack, maxoff=2):
     dx = np.zeros(Nimage)
     dy = np.zeros(Nimage)
     
+    if refmode=='mean':
+        template = stack.mean(0)
+    elif refmode=='median':
+        template = np.median(stack, axis=0)
+    else:
+        template = stack[0]
+    
     # Determine the shift between first frame and the others
     for i in range(Nimage):
         dx[i],dy[i] = register_images(
-            stack[0],stack[i], usfac=100.,zeromean=False,maxoff=maxoff)
+            template, stack[i], usfac=100.,zeromean=False,maxoff=maxoff)
 
     return dx,dy
 
@@ -2989,7 +3045,7 @@ def query_stars_in_stamp(pixfn,dkepmag=5):
     catcut = catcut.copy() 
     return catcut
 
-def get_stars_pix(pixfn,frame):
+def get_stars_pix(pixfn,frame, retsynframe=False, ids='all', prfpath=None,dkepmag=5, verbose=False):
     """
     Get stars position 
 
@@ -3000,6 +3056,10 @@ def get_stars_pix(pixfn,frame):
     ----------
     pixfn : pixel file name
     frame : reference frame.
+    retsynframe : bool; return synthetic frame
+    ids : which KIC/EPIC values to include
+    prfpath : filename of PRF file, or None
+    dkepmag : grab stars upto dkepmag fainter than target
     
     Return
     ------
@@ -3008,8 +3068,9 @@ def get_stars_pix(pixfn,frame):
 
     """
     # 2014-09-30 18:30 IJMC: Now output both catcut & shift
+    # 2014-11-16 09:43 IJMC: Added options: retsynframe, ids, dkepmag.
 
-    catcut = query_stars_in_stamp(pixfn)
+    catcut = query_stars_in_stamp(pixfn, dkepmag=dkepmag)
     
     # Determine where stars are supposed to fall based on wcs
     w = get_wcs(pixfn)
@@ -3020,26 +3081,54 @@ def get_stars_pix(pixfn,frame):
     # x and y fliped to account for python imshow convention
     y,x = np.mgrid[0:frame.shape[0],0:frame.shape[1]]
     synframe = np.zeros(frame.shape)
+    synframe_special = np.zeros(frame.shape)
     catcut['A'] = catcut['kepmag'] - np.min(catcut['kepmag'])
     catcut['A'] = 10**(-0.4 * catcut.A)
+
+    if ids=='all':
+        index = catcut.index
+    else:
+        index = ids
+
+    if prfpath is not None:
+        prf, sampling = loadPRF(file=pixfn)
+        prf = an.pad(prf, frame.shape[0]*sampling, frame.shape[1]*sampling)
+        peakloc = (prf==prf.max()).nonzero()
+
     for i in catcut.index:
         d = catcut.ix[i]
         g = gaussian(d['pix0'],d['pix1'],0.5)
-        synframe += d['A']*g(x,y)
-    synframe *= frame.sum() / synframe.sum()
+        if prfpath is not None:
+            prfmod = ld.shiftImages(d['A'] * prf, d['pix0']*sampling-peakloc[0], d['pix1']*sampling-peakloc[1]).squeeze()
+            thisstar = an.binarray(prfmod, sampling)
+        else:
+            thisstar = d['A']*g(x,y)
+        synframe += thisstar
+        if i in index:
+            synframe_special += thisstar
+
+    scalefactor = frame.sum() / synframe.sum()
+    synframe = synframe_special * scalefactor
+    #synframe *= scalefactor
+
 
     # Determine the shift between reference and synthetic images
     shift = register_images(frame, synframe, usfac=100.)
     shift = np.array(shift)
 
-    print "stars shifted by %s pixels from header WCS" % str(shift)
+    if verbose: 
+        print "stars shifted by %s pixels from header WCS" % str(shift)
     catcut['pix0']-=shift[0]
     catcut['pix1']-=shift[1]
 
     epic = fits.open(pixfn)[0].header['KEPLERID']
     xcen,ycen = catcut.ix[epic]['pix0 pix1'.split()]
-    print xcen,ycen
-    return catcut, shift
+    #print xcen,ycen
+
+    ret = catcut, shift
+    if retsynframe:
+        ret += (synframe,)
+    return ret
 
 
 class gaussian:
@@ -3075,6 +3164,108 @@ def imshow2(im,**kwargs):
            extent=extent,**kwargs)
 
     return im
+
+
+def estimateMaxAperRadius(pixfn, epic=None, maxContamination=0.1, tlimits=(1862.45, np.inf), _prfpath=None, doplot=False, annuluswidth=0.25, dkepmag=10, verbose=False):
+    """
+    Estimate maximum aperture radius for a K2 field.
+
+    :INPUTS:
+      pixfn : str
+        Filename of the Pixel
+
+    :OPTIONS:
+      epic : None, int, str, or sequence of ints
+        Target ID or IDs to examine. If None, use KEPLERID field in
+        pixfn. If 'all', compute for all IDs returned by
+        :func:`get_stars_pix`
+
+      maxContamination : scalar
+        Maximum allowable contamination.
+
+      tlimits : 2-sequence
+        Valid time interval (before application of 'bjd0'). 
+
+      _prfpath : str or None
+        Path of the Kepler PRF files (available from
+        http://archive.stsci.edu/kepler/fpc.html). Default is
+        '~/proj/transit/kepler/prf/'
+
+      doplot : bool
+        Whether to plot some diagnostic plots.
+
+      annuluswidth : positive int
+        Width of radial-profile annuli, in pixels.
+
+    :RETURNS:
+      maxAperRadius : 1D NumPy array
+    """
+    # 2014-11-16 16:07 IJMC: Created
+
+    import radial_data as rd
+
+    if epic is None:
+        epic = fits.open(pixfn)[0].header['KEPLERID']
+
+    cube,headers = loadPixelFile(pixfn, tlimits=tlimits)
+    time, data, edata = cube['time'],cube['flux'],cube['flux_err']
+    data, edata = preconditionDataCubes(data, edata, medSubData=True)
+    frame0 = np.median(data, axis=0)
+    x, y = np.arange(frame0.shape[1]), np.arange(frame0.shape[0])
+    xx, yy = np.meshgrid(x, y)
+
+    if _prfpath is None and os.path.isfile(prfpath()):
+        _prfpath = prfpath()
+
+    cat,b,im = get_stars_pix(pixfn, frame0, True, prfpath=_prfpath, dkepmag=dkepmag)
+    imm = ld.shiftImages(im, -b[0], -b[1]).squeeze()
+
+    if epic=='all':
+        epics = cat.epic
+    elif not hasattr(epic, '__iter__'):
+        epics = [epic]
+    else:
+        epics = np.array(epic, copy=True)
+
+    maxrads = np.zeros(len(epics), dtype=float)
+    for iii,epic in enumerate(epics): 
+        if (epic in cat.epic):
+            junk,junk,im0 = get_stars_pix(pixfn, frame0, True, prfpath=_prfpath, ids=[epic])
+            imm0 = ld.shiftImages(im0, -b[0], -b[1]).squeeze()
+            loc = cat.ix[epic]['pix0'], cat.ix[epic]['pix1']
+            rad = rd.radial_data(frame0, annulus_width=annuluswidth, x=xx-loc[0], y=yy-loc[1], rmax=max(frame0.shape)*0.5)
+            radmod  = rd.radial_data(imm, annulus_width=annuluswidth, x=xx-loc[0], y=yy-loc[1], rmax=max(frame0.shape)*0.5)
+            radmod0 = rd.radial_data(imm0, annulus_width=annuluswidth, x=xx-loc[0], y=yy-loc[1], rmax=max(frame0.shape)*0.5)
+
+            zind = radmod.numel>0
+
+            maxrad = np.interp(1. + maxContamination, (radmod.sum / radmod0.sum)[zind], radmod.r[zind])
+        else:
+            maxrad = -1
+        maxrads[iii] = maxrad
+
+        if doplot and maxrad>0:
+            py.figure()
+            ax1=py.subplot(121)
+            py.plot(radmod.r, radmod.sum / radmod0.sum, '.-'); 
+            py.plot([maxrad]*2, py.ylim(), '-r', linewidth=2)
+            py.title('EPIC %i' % epic)
+            ax1.set_xlabel('Radius')
+            ax1.set_ylabel('Enclosed Flux Ratio (field / singlestar)')
+            ax2=py.subplot(222)
+            ax3=py.subplot(224)
+
+            for ax, im2plot in zip([ax2, ax3], [frame0, imm]):
+                imdat = ax.imshow(np.log10(np.abs(im2plot))) 
+                axlim = ax.axis()
+                ax.plot(cat.pix0, cat.pix1, 'ok')
+                imdat.set_clim(.5, 5)
+                tools.drawCircle(loc[0], loc[1], maxrad, color='r', linewidth=3, fill=False, ax=ax)
+                ax.plot([loc[0]], [loc[1]], '.r')
+                ax.set_title('log10(frame)')
+                ax.axis(axlim)
+
+    return maxrads
 
 if __name__ == "__main__":
     sys.exit(main())

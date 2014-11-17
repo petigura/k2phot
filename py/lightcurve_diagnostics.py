@@ -430,7 +430,7 @@ def plotDiagnostics(lcFits, lcPickle, pixFile, transitModel, fontsize=14, medFil
 
     diffImage, e_diffImage, inImage, e_inImage, outImage, e_outImage = \
         constructDiffImage(time, data, transitModel, per, edata=edata, \
-                               posx=c1, posy=c2, shift='reg', \
+                               posx=c1, posy=c2, shift='xcshift', \
                                retall=True, empiricalErrors=False)
     fig, ax5678, caxs = plotDiffImages(diffImage, e_diffImage, inImage, outImage, apertureMask=input.crudeApertureMask, catcut=input.catcut, epic=input.epic, figpos=[0.37, 0.45, 0.4, 0.5], fig=fig, cmap=py.cm.cubehelix, conCol='r', fontsize=fontsize*0.8, loc=input.loc)
     axs = axs + ax5678
@@ -813,7 +813,14 @@ def shiftImages(data, posx, posy, shift='scipy1'):
         """
 
     # 2014-10-09 15:10 IJMC: Created
+    # 2014-11-16 09:47 IJMC: Now can handle 2D data (single frames)
     from scipy import ndimage
+    if data.ndim==2:
+        data = np.reshape(data, (1, data.shape[0], data.shape[1]))
+    if not hasattr(posx, '__iter__'):
+        posx = np.array([posx])
+    if not hasattr(posy, '__iter__'):
+        posy = np.array([posy])
 
 
     nobs = data.shape[0]
@@ -834,7 +841,7 @@ def shiftImages(data, posx, posy, shift='scipy1'):
 
     # 2014-10-09 15:06 IJMC: Created
 
-def constructDiffImage(time, data, transitModel, period, edata=None, posx=None, posy=None, shift='scipy1', retall=False, empiricalErrors=False):
+def constructDiffImage(time, data, transitModel, period, edata=None, posx=None, posy=None, shift='xcshift', retall=False, empiricalErrors=False):
     """
     Construct (in-out) difference image from a set of (possibly shifted) frames.
 
@@ -871,7 +878,9 @@ def constructDiffImage(time, data, transitModel, period, edata=None, posx=None, 
 
       shift : str or None
         Mode to use for re-shifting images.  See :func:`shiftImages`,
-        or input 'reg' for :func:`image_registration.register_images`
+        input 'reg' for :func:`image_registration.register_images`, or
+        use the default 'xcshift' to calculate the shifts anew via
+        cross-correlation, then use scipy.ndimage.shift.
 
         None -- no shifting is done. With K2, this means your images
             will look *noisy*!
@@ -889,6 +898,10 @@ def constructDiffImage(time, data, transitModel, period, edata=None, posx=None, 
     """
     # 2014-10-07 17:14 IJMC: Created
     # 2014-10-15 13:46 IJMC: Added option for shift='reg'
+    # 2014-10-24 21:00 IJMC: Added option for shift='xcshift', using
+    #                        ideas from diffimage.py
+    from scipy import ndimage as nd
+
     nobs = time.size
     inTran, preTran, postTran = indexInOutTransit(time, transitModel, period)
 
@@ -905,6 +918,10 @@ def constructDiffImage(time, data, transitModel, period, edata=None, posx=None, 
                 data[ii] = np.fft.fftshift(data[ii])
 
             #data = shiftImages(data0, xnew-xnew.mean(), ynew-ynew.mean(), shift='fft') 
+        elif shift.lower()=='xcshift':
+            dx,dy = pixel_decorrelation.subpix_reg_stack(data, refmode='mean')
+            data = np.array([nd.shift(data[jj], [-dy[jj], -dx[jj]], order=3) for jj in range(nobs)])
+            if edata is not None: edata = np.array([nd.shift(edata[jj], [-dy[jj], -dx[jj]], order=3) for jj in range(nobs)])
         else:
             data = shiftImages(data, xm, ym, shift=shift)
             if edata is not None:  edata = shiftImages(edata, xm, ym, shift=shift)
@@ -965,7 +982,7 @@ def plotDiffImages(diffImage, e_diffImage, inImage, outImage, apertureMask=None,
 
         diffImage, e_diffImage, inImage, e_inImage, outImage, e_outImage = \
             ld.constructDiffImage(time, data, transitModel, P, edata=edata, \
-                                   posx=c1, posy=c2, shift='reg', \
+                                   posx=c1, posy=c2, shift='xcshift', \
                                    retall=True, empiricalErrors=False)
         fig, axs, caxs = ld.plotDiffImages(diffImage, e_diffImage, inImage, outImage, apertureMask=pic.crudeApertureMask, catcut=pic.catcut, epic=pic.epic, cmap=ld.py.cm.cubehelix, conCol='r', fontsize=12)
     
@@ -1087,8 +1104,8 @@ def fitPRF2Image(image, e_image, pixfn, loc, targApDiam, ngrid=40, reterr=False,
     dframe = np.round(targApDiam).astype(int)
     weights = 1./e_image**2
 
-    gridpts1 = np.linspace(-targApDiam/2.,targApDiam/2.,ngrid)*sampling
-    gridpts2 = np.linspace(-targApDiam/2.,targApDiam/2.,ngrid)*sampling
+    gridpts1 = np.linspace(-targApDiam/1.5,targApDiam/1.5,ngrid)*sampling
+    gridpts2 = np.linspace(-targApDiam/1.5,targApDiam/1.5,ngrid)*sampling
 
     zoomIn = True
     iter = 0
@@ -1099,19 +1116,22 @@ def fitPRF2Image(image, e_image, pixfn, loc, targApDiam, ngrid=40, reterr=False,
         testgrid = phot.psffit(     prf, image, loc, weights, scale=sampling, dframe=dframe,    xoffs=gridpts1, yoffs=gridpts2, verbose=False, retvec=False, useModelCenter=True)
         redChisqGrid = testgrid[2] / testgrid[2].min()
         dof = testgrid[0].size - 4 # x, y, scaling, background
-        red_chisq_1sigma = tools.invChisq(dof, .683) / testgrid[0].size
+        prob = np.exp(-0.5*(dof * (redChisqGrid - redChisqGrid.min())))
+        #red_chisq_1sigma = tools.invChisq(dof, .683) / dof
         grids.append(testgrid)
         xys.append((gridpts1, gridpts2))
-        if (redChisqGrid <= red_chisq_1sigma).sum()<25:
+        sigma_region_size = min((prob>an.confmap(prob, .683)).sum(), 1)
+        if (sigma_region_size < (prob.size*0.1)):
             if verbose: print "Finished iteration %i, continuing..." % iter
             zoomIn = True
-            gridpts1 = testgrid[5] + np.linspace(-targApDiam/2.,targApDiam/2.,ngrid)*sampling/4**iter
-            gridpts2 = testgrid[6] + np.linspace(-targApDiam/2.,targApDiam/2.,ngrid)*sampling/4**iter
+            zoomLevel = 1.1*np.sqrt(prob.size*0.1 / sigma_region_size)
+            gridpts1 = testgrid[5] + np.linspace(-targApDiam/2.,targApDiam/2.,ngrid)*sampling/zoomLevel
+            gridpts2 = testgrid[6] + np.linspace(-targApDiam/2.,targApDiam/2.,ngrid)*sampling/zoomLevel
         else:
             zoomIn = False
+        #pdb.set_trace()
 
     if reterr:
-        prob = np.exp(-0.5*(dof * (redChisqGrid - redChisqGrid.min())))
         cum1 = np.cumsum(prob.sum(0) / prob.sum())
         cum2 = np.cumsum(prob.sum(1) / prob.sum())
         lolim1 = (np.abs(cum1 - 0.158) == np.abs(cum1 - 0.158).min()).nonzero()[0][0]
@@ -1237,7 +1257,7 @@ def plotPixelTransit(*args, **kwargs):
     return fig, ax
 
 
-def plotDIA_PRF_fit(pixFile, input, diffImage, e_diffImage, outImage, e_outImage, ngrid=40, fig=None, figpos=None, cmap=py.cm.jet, fontsize=14):
+def plotDIA_PRF_fit(pixFile, input, diffImage, e_diffImage, outImage, e_outImage, ngrid=40, fig=None, figpos=None, cmap=py.cm.jet, fontsize=14, minApWidth=5):
     """Fit PRFs to difference & o.o.t. images, and plot results.
 
     Mainly a helper function -- and a pretty slow one, too!
@@ -1258,9 +1278,10 @@ def plotDIA_PRF_fit(pixFile, input, diffImage, e_diffImage, outImage, e_outImage
     pos4 = [x0+0.38*dx, y0+0.1*dy, 0.35*dx, 0.35*dy]
     pos5 = [x0+0.72*dx, y0+0.1*dy, 0.26*dx, 0.8*dy]
 
-    fitDiff, e_fitDiff, modDiff = fitPRF2Image(diffImage, e_diffImage+(1.-input.crudeApertureMask)*9e9, pixFile, input.loc, input.apertures[0]*2, ngrid=ngrid, reterr=True)
-    fitOut, e_fitOut, modOut = fitPRF2Image(outImage, e_outImage+(1.-input.crudeApertureMask)*9e9, pixFile, input.loc, input.apertures[0]*2, ngrid=ngrid, reterr=True)
-    #fitIn, e_fitIn, modIn = fitPRF2Image(inImage, e_inImage+(1.-input.crudeApertureMask)*9e9, pixFile, input.loc, input.apertures[0]*2, ngrid=ngrid, reterr=True)
+    prfFitApertureWidth = max(minApWidth, input.apertures[0]*2)
+    fitDiff, e_fitDiff, modDiff = fitPRF2Image(diffImage, e_diffImage+(1.-input.crudeApertureMask)*9e9, pixFile, input.loc, prfFitApertureWidth, ngrid=ngrid, reterr=True)
+    fitOut, e_fitOut, modOut = fitPRF2Image(outImage, e_outImage+(1.-input.crudeApertureMask)*9e9, pixFile, input.loc, prfFitApertureWidth, ngrid=ngrid, reterr=True)
+    #fitIn, e_fitIn, modIn = fitPRF2Image(inImage, e_inImage+(1.-input.crudeApertureMask)*9e9, pixFile, input.loc, prfFitApertureWidth, ngrid=ngrid, reterr=True)
 
     PRFmotion = fitOut - fitDiff
     e_PRFmotion = np.sqrt(e_fitOut**2 + e_fitDiff**2)

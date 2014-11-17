@@ -4394,4 +4394,55 @@ def total_least_squares(data1, data2, data1err=None, data2err=None,
             print "Chi^2 = %g, N = %i" % (((data2-(data1*M))**2).sum(),data1.shape[0]-1)
         return M
 
+def confmap(map, frac, **kw):
+    """Return the confidence level of a 2D histogram or array that
+    encloses the specified fraction of the total sum.
+
+    :INPUTS:
+      map : 1D or 2D numpy array
+        Probability map (from hist2d or kde)
+
+      frac : float, 0 <= frac <= 1
+        desired fraction of enclosed energy of map
+
+    :OPTIONS:
+      ordinate : None or 1D array
+        If 1D map, interpolates onto the desired value.  This could
+        cause problems when you aren't just setting upper/lower
+        limits....
+
+    :SEE_ALSO:
+      :func:`dumbconf` for 1D distributions
+    """
+    # 2010-07-26 12:54 IJC: Created
+    # 2011-11-05 14:29 IJMC: Fixed so it actually does what it's supposed to!
+    # 2014-09-05 21:11 IJMC: Moved from kdestats to analysis.py. Added
+    #                        errorcheck on 'frac'.
+
+    from scipy.optimize import bisect
+
+    if frac<0 or frac >1:
+        print "Input 'frac' to confmap() must be 0 <= f <= 1."
+        stop
+
+    def diffsum(level, map, ndesired):
+        return ((1.0*map[map >= level].sum()/map.sum() - ndesired))
+
+    if hasattr(frac,'__iter__'):
+        return [confmap(map,thisfrac, **kw) for thisfrac in frac]
+
+    #nx, ny = map.shape
+    #ntot = map.size
+    #n = int(ntot*frac)
+
+    #guess = map.max()
+    #dx = 10.*float((guess-map.min())/ntot)
+    #thisn = map[map<=guess].sum()
+
+    ret = bisect(diffsum, map.min()-1, map.max()+1, args=(map, frac))
+    if kw.has_key('ordinate') and kw['ordinate'] is not None:
+        sortind = np.argsort(map)
+        ret = np.interp(ret, map[sortind], kw['ordinate'][sortind])
+
+    return ret
 

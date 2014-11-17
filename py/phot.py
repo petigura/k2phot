@@ -121,9 +121,12 @@ def estbg(im, mask=None, bins=None, plotalot=False, rout=(3,200), badval=nan, ve
         #pdb.set_trace()
         if nunique > len(dat)/20.:
             dobin = False
-        else:
+        elif nunique>1:
             dobin = True
             bins = linspace(dat.min(), dat.max(), nunique/2)
+        else:
+            dobin = True
+            bins = np.array([dat[0]-1, dat[0]+1])
 
     if plotalot or verbose: 
         print "dat.mean, dat.std>>" + str((dat.mean(), dat.std()))
