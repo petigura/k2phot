@@ -856,7 +856,7 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
     if prfphot: 
         junkF, junkE, junkB, testphot = aperturePhotometryFromPixelData(
             data.mean(0), loc, apertures, resamp=resamp, verbose=verbose, 
-            retall=True)
+            retall=True, pool=pool)
 
         flux, bg, xPRF, yPRF, chiPRF = fitPhotometryFromPixelData(
             fn, data, testphot.position, apertures, errstack=edata,
@@ -867,7 +867,7 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
         if apertureMode[0:4]=='circ':
             flux, eflux, bg, testphot = aperturePhotometryFromPixelData(
                 data, loc, apertures, resamp=resamp, verbose=verbose, 
-                retall=True)
+                retall=True, pool=pool)
         elif apertureMode=='prf':
             medFrame = np.median(data, axis=0)
             loc = refineCentroid(medFrame, apertures, loc=loc, verbose=verbose)
@@ -881,7 +881,7 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
                     eframe=edata.mean(0))
 
             flux, eflux, bg, testphot = aperturePhotometryFromPixelData(
-                data, loc, aperMask, resamp=1, verbose=verbose, retall=True)
+                data, loc, aperMask, resamp=1, verbose=verbose, retall=True, pool=pool)
         else:
             print "Aperture mode '%s' unknown. Exiting!" % apertureMode
             return -1
@@ -987,7 +987,7 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
 
     return output
 
-def aperturePhotometryFromPixelData(stack, loc, apertures, resamp=1, recentroid=False, verbose=False, retall=True):
+def aperturePhotometryFromPixelData(stack, loc, apertures, resamp=1, recentroid=False, verbose=False, retall=True, pool=None):
     """
     :INPUTS:
       stack : 2D or 3D NumPy array.
@@ -1003,12 +1003,17 @@ def aperturePhotometryFromPixelData(stack, loc, apertures, resamp=1, recentroid=
   
         Otherwise, we'll have to think of something fancier to do.
   
+      pool : multiprocessing.Pool() object
+        If you like, pass in a ready-made Pool() object for multithreading.
+
     :NOTES:
       May have problems for data whose motions are comparable to or
       larger than the PSF size.
       """
     # 2014-08-27 16:25 IJMC: Created
     # 2014-09-04 15:32 IJMC: Moved 'refineCentroid' to separate function.
+    # 2014-11-18 08:47 IJMC: Aperture photometry is now multithreaded;
+    #                        added pool option.
 
     if stack.ndim==2:
         stack = stack.reshape((1,)+stack.shape)
@@ -1048,7 +1053,15 @@ def aperturePhotometryFromPixelData(stack, loc, apertures, resamp=1, recentroid=
         mask = phot4mask.mask_targ + phot4mask.mask_sky*2.0
 
 
-    phots = [phot.aperphot(stack[ii], pos=loc[:,ii], dap=dap, mask=mask, resamp=resamp, retfull=True) for ii in xrange(nobs)]
+    #phots = [phot.aperphot(stack[ii], pos=loc[:,ii], dap=dap, mask=mask, resamp=resamp, retfull=True) for ii in xrange(nobs)]
+    allArgs = [(stack[ii], None, loc[:,ii], dap, mask, False, 999, resamp, True) for ii in xrange(nobs)]
+    if verbose: print "Computing aperture photometry...",
+    if pool is None:
+        if verbose: print " using a single processor."
+        phots = map(phot.aperphotHelperParallel, allArgs)
+    else:
+        if verbose: print " using multi-processing."
+        phots = pool.map(phot.aperphotHelperParallel, allArgs)
 
     flux = np.zeros(nobs, dtype=float)
     eflux = np.zeros(nobs, dtype=float)

@@ -1411,4 +1411,13 @@ def egauss2d(param, x, y, z, ez=None):
 
 
 
+def aperphotHelperParallel(argTuple):
+    """Wrapper for :func:`aperphot` to be used with 'map' function.
+
+    argTuple = fn, timekey, pos, dap, mask, verbose, nanval, resamp, retfull, ignorenan
+    """
+    # 2013-11-18 IJMC: Created
+
+    return aperphot(*argTuple)
+
 
