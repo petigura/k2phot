@@ -1094,6 +1094,7 @@ def fitPRF2Image(image, e_image, pixfn, loc, targApDiam, ngrid=40, reterr=False,
 
     """
     # 2014-10-08 21:06 IJMC: Created
+    # 2014-11-21 09:15 IJMC: Fixed bug with zoomLevel and divide-by-zero.
 
     if reterr:
         maxiter = 10
@@ -1124,7 +1125,10 @@ def fitPRF2Image(image, e_image, pixfn, loc, targApDiam, ngrid=40, reterr=False,
         if (sigma_region_size < (prob.size*0.1)):
             if verbose: print "Finished iteration %i, continuing..." % iter
             zoomIn = True
-            zoomLevel = 1.1*np.sqrt(prob.size*0.1 / sigma_region_size)
+            if sigma_region_size==0:
+                zoomLevel = 4
+            else:
+                zoomLevel = 1.1*np.sqrt(prob.size*0.1 / sigma_region_size)
             gridpts1 = testgrid[5] + np.linspace(-targApDiam/2.,targApDiam/2.,ngrid)*sampling/zoomLevel
             gridpts2 = testgrid[6] + np.linspace(-targApDiam/2.,targApDiam/2.,ngrid)*sampling/zoomLevel
         else:
@@ -1257,7 +1261,7 @@ def plotPixelTransit(*args, **kwargs):
     return fig, ax
 
 
-def plotDIA_PRF_fit(pixFile, input, diffImage, e_diffImage, outImage, e_outImage, ngrid=40, fig=None, figpos=None, cmap=py.cm.jet, fontsize=14, minApWidth=5):
+def plotDIA_PRF_fit(pixFile, input, diffImage, e_diffImage, outImage, e_outImage, ngrid=40, fig=None, figpos=None, cmap=py.cm.jet, fontsize=14, minApWidth=7):
     """Fit PRFs to difference & o.o.t. images, and plot results.
 
     Mainly a helper function -- and a pretty slow one, too!
