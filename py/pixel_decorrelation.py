@@ -86,8 +86,6 @@ import warnings
 from multiprocessing import Pool
 import pdb
 
-import matplotlib
-matplotlib.use('Agg')  # Should allow plotting directly to files.
 from matplotlib.pylab import *
 import numpy as np
 from numpy import ma
