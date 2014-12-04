@@ -107,9 +107,10 @@ import k2_catalogs
 from matplotlib.gridspec import GridSpec
 from image_registration import register_images
 from pixel_io import loadPixelFile
+import lightcurve_diagnostics as ld
 
 try:
-    import _chi2  # Leverage my c-based chi-squared routine:
+    import _chi2  # Leverage IJMC's c-based chi-squared routine:
     c_chisq = True
 except:
     c_chisq = False
@@ -135,6 +136,9 @@ class baseObject:
 
 def main(argv=None):
     # 2014-09-30 16:49 IJMC: Added default to xymeth
+    # 2014-10-08 13:19 IJMC: Now use correct EPIC & KepMag when
+    #                        '--epic' option is set.
+    # 2014-11-17 13:24 IJMC: Now '--epic=all' is available.
     np.set_printoptions(precision=3)
 
     if argv is None:
@@ -208,7 +212,7 @@ def main(argv=None):
         p.add_option('--minrad', dest='minrad', type='float', 
                      help='Minimum aperture radius (pixels)', default=1.5)
         p.add_option('--maxrad', dest='maxrad', type='float', 
-                     help='Maximum aperture radius (pixels)', default=15)
+                     help='Maximum aperture radius (pixels). Set -1 for auto-set.', default=-1)
         
         # If the apertures are known beforehand, we can enter them in
         # here by hand
@@ -283,8 +287,11 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
         xymeth = options.xymeth
 
         tlimits = [tmin, tmax]
+        dkepmag = 10
+        min_maxrad = 2.5
 
         shift = [0, 0]
+
 
         if options.aper:
             xcen,ycen = get_star_pos(fn,mode='aper')
@@ -295,7 +302,7 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
 
             cube,headers = loadPixelFile(fn, tlimits=tlimits)
 
-            if options.epic!='':
+            if options.epic!='' and options.epic!='all':
                 epic = int(options.epic)
                 headers[0]['KEPLERID'] = epic
 
@@ -304,9 +311,10 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
             frame0 = ma.median(frame0,axis=0)
             frame0.fill_value=0
             frame0= frame0.filled()
-            catcut, shift = get_stars_pix(fn,frame0)
+            catcut, shift = get_stars_pix(fn,frame0, dkepmag=dkepmag)
             epic = headers[0]['KEPLERID']
             xcen,ycen = catcut.ix[epic]['pix0 pix1'.split()]
+
         else:
             xcen     = options.xcen
             ycen     = options.ycen
@@ -319,61 +327,92 @@ Specify multiple formats with comma (e.g. pobj,fits)""")
         if not os.path.isfile(fn):
             fn = _data + fn
 
+
     # Setup Pool for multiprocessing support:
     if nthreads==1:
         pool = None
     else:
         pool = Pool(processes=nthreads)
+
     
+    # Setup to allow multiple runs on a singe file:
+    if options.wcs:
+        if options.epic=='all':
+            all_index = (np.array(catcut.pix0) > 1) * (np.array(catcut.pix1) > 1)*\
+                (np.array(catcut.pix0) < (frame0.shape[0]-2)) * \
+                (np.array(catcut.pix1) < (frame0.shape[1]-2))
+            epics = catcut.index[all_index]
+        else:
+            epics = [epic]
+        xcens = [catcut.ix[ep]['pix0'] for ep in epics]
+        ycens = [catcut.ix[ep]['pix1'] for ep in epics]
+        if maxrad<0:
+            if verbose:
+                print "Input 'maxrad' is <0; automatically setting maxrads..."
+            maxrads0 = np.array([estimateMaxAperRadius(fn, epic=ep, doplot=options.plotalot, dkepmag=dkepmag, verbose=verbose) for ep in epics]).ravel()
+            maxrads = np.vstack((maxrads0, np.ones(len(epics))*min_maxrad)).max(0)
+        else:
+            maxrads = [maxrad]*len(epics)
+    else:  # We're not using WCS... vestigial functionality
+        maxrads = [maxrad]
+        xcens = [xcen]
+        ycens = [ycen]
+
+    ntarg = len(xcens)
     # Run the code:
     #
     # The photometry routines expect the flipped coordinates !!!!!
     # 
-    loc = (xcen,ycen)
-    loc_flip = (loc[1],loc[0]) 
-    # Option here to manually specify the apertures
-    if apertures!="":
-        apertures = apertures.split(',')
-        apertures = [float(a) for a in apertures]
-        results = runPixelDecorrelation(
-            fn, loc_flip, apertures, apertureMode=apertureMode, resamp=resamp,
-            nordGeneralTrend=nordGeneralTrend, verbose=verbose, 
-            plotalot=plotalot, xy=None, prfFrac=None, tlimits=tlimits, 
-            pool=pool, gausscen=gausscen,xymeth=xymeth, decorMode=decorMode)
-    else:
-        results = runOptimizedPixelDecorrelation(
-            fn, loc_flip, apertureMode=apertureMode, resamp=resamp, 
-            nordGeneralTrend=nordGeneralTrend, pool=pool, tlimits=tlimits, 
-            verbose=verbose, plotalot=0, minrad=minrad, maxrad=maxrad, 
-            gausscen=gausscen,xymeth=xymeth, decorMode=decorMode)
+    for ind in np.argsort(catcut.ix[epics]['kepmag']):
+        loc = (xcens[ind],ycens[ind])
+        loc_flip = (loc[1],loc[0]) 
+        # Option here to manually specify the apertures
+        if apertures!="":
+            apertures = apertures.split(',')
+            apertures = [float(a) for a in apertures]
+            results = runPixelDecorrelation(
+                fn, loc_flip, apertures, apertureMode=apertureMode, resamp=resamp,
+                nordGeneralTrend=nordGeneralTrend, verbose=verbose, 
+                plotalot=plotalot, xy=None, prfFrac=None, tlimits=tlimits, 
+                pool=pool, gausscen=gausscen,xymeth=xymeth, decorMode=decorMode)
+        else:
+            results = runOptimizedPixelDecorrelation(
+                fn, loc_flip, apertureMode=apertureMode, resamp=resamp, 
+                nordGeneralTrend=nordGeneralTrend, pool=pool, tlimits=tlimits, 
+                verbose=verbose, plotalot=0, minrad=minrad, maxrad=maxrads[ind], 
+                gausscen=gausscen,xymeth=xymeth, decorMode=decorMode)
 
-    results.argv = argv
+        results.argv = argv
+        results.epic = epics[ind] #results.headers[0]['KEPLERID']
+        if options.wcs:
+            results.catcut = catcut
+            if options.epic!='':
+                results.epic = int(results.epic)
+                results.kepmag = results.catcut.ix[results.epic].kepmag
+        savefile = '%s%09d' % (_save, results.epic)
 
-    results.epic = results.headers[0]['KEPLERID']
-    savefile = '%s%09d' % (_save, results.epic)
-    if options.wcs:
-        results.catcut = catcut
 
-    # Save everything to disk:
-    picklefn = savefile + '.pickle'
-    fitsfn = savefile + '.fits'
-        
-    if output.count('pdict')==1:
-        tools.savepickle(tools.obj2dict(results), picklefn)
-    if output.count('pobj')==1:
-        tools.savepickle(results, picklefn)
-    if output.count('fits')==1:
-        to_fits(results,fitsfn)
+        # Save everything to disk:
+        picklefn = savefile + '.pickle'
+        fitsfn = savefile + '.fits'
 
-    # Plot pretty pictures & print to disk:
-    plotPixelDecorResults(results, fs=fs, shift=[0,0])
-    pdffn = savefile + '.pdf'
+        if output.count('pdict')==1:
+            tools.savepickle(tools.obj2dict(results), picklefn)
+        if output.count('pobj')==1:
+            tools.savepickle(results, picklefn)
+        if output.count('fits')==1:
+            to_fits(results,fitsfn)
 
-    tools.printfigs(pdffn, pdfmode=plotmode, verbose=verbose)
-    py.close('all')
+        # Plot pretty pictures & print to disk:
+        plotPixelDecorResults(results, fs=fs, shift=[0,0])
+        pdffn = savefile + '.pdf'
+
+        tools.printfigs(pdffn, pdfmode=plotmode, verbose=verbose)
+        py.close('all')
+
     return
 
-
+# Table with fits column description
 fits_col="""\
 "time","Time, BJD_TDB"
 "rawFlux","Raw aperture photometry"
@@ -532,7 +571,7 @@ def runOptimizedPixelDecorrelation(fn, loc, apertures=None, apertureMode='circul
             inner_ap_radii = np.concatenate((inner_ap_radii, 6*1.2**np.arange(nlog+1)))
             inner_ap_radii = inner_ap_radii[inner_ap_radii <= maxrad]
         if inner_ap_radii.size < 3:
-            inner_ap_radii = np.linspace(minrad, maxrad, 3)
+            inner_ap_radii = np.linspace(minrad, maxrad, 4)
         prfFrac = [None ] * len(inner_ap_radii)
 
     elif apertureMode=='prf':
@@ -787,6 +826,7 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
     # 2014-09-06 15:09 IJMC: Added aperturemode and prfFrac options.
     # 2014-10-02 15:11 IJMC: Mask invalid 'edata' values.
     # 2014-10-06 14:19 IJMC: Added decorMode option.
+    # 2014-11-16 17:59 IJMC: We were computing photometry twice; commented one out.
 
     apertureMode = apertureMode.lower()
     if verbose: 
@@ -804,8 +844,8 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
     data, edata = preconditionDataCubes(data, edata)
 
     # Extract photometry (add eventual hook for PRF fitting):
-    flux, eflux, bg, testphot = aperturePhotometryFromPixelData(
-        data, loc, apertures, resamp=resamp, verbose=verbose, retall=True)
+    #flux, eflux, bg, testphot = aperturePhotometryFromPixelData(
+    #    data, loc, apertures, resamp=resamp, verbose=verbose, retall=True)
 
     # Extract photometry:
     prfphot = False
@@ -814,7 +854,7 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
     if prfphot: 
         junkF, junkE, junkB, testphot = aperturePhotometryFromPixelData(
             data.mean(0), loc, apertures, resamp=resamp, verbose=verbose, 
-            retall=True)
+            retall=True, pool=pool)
 
         flux, bg, xPRF, yPRF, chiPRF = fitPhotometryFromPixelData(
             fn, data, testphot.position, apertures, errstack=edata,
@@ -825,7 +865,7 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
         if apertureMode[0:4]=='circ':
             flux, eflux, bg, testphot = aperturePhotometryFromPixelData(
                 data, loc, apertures, resamp=resamp, verbose=verbose, 
-                retall=True)
+                retall=True, pool=pool)
         elif apertureMode=='prf':
             medFrame = np.median(data, axis=0)
             loc = refineCentroid(medFrame, apertures, loc=loc, verbose=verbose)
@@ -839,7 +879,7 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
                     eframe=edata.mean(0))
 
             flux, eflux, bg, testphot = aperturePhotometryFromPixelData(
-                data, loc, aperMask, resamp=1, verbose=verbose, retall=True)
+                data, loc, aperMask, resamp=1, verbose=verbose, retall=True, pool=pool)
         else:
             print "Aperture mode '%s' unknown. Exiting!" % apertureMode
             return -1
@@ -852,15 +892,15 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
         k = 'xcorr1D'
         if xymeth.count(k) > 0:
             dx, dy = xcorrStack(data, npix_corr=3)
-            x = testphot.position[0] - dx
-            y = testphot.position[1] - dy
+            x = testphot.position[0] + dx
+            y = testphot.position[1] + dy
             xys[k] = (x,y)
 
         k = 'xcorr2D'
         if xymeth.count(k) > 0:
             dx, dy = subpix_reg_stack(data)
-            x = testphot.position[0] - dx
-            y = testphot.position[1] - dy
+            x = testphot.position[0] + dx
+            y = testphot.position[1] + dy
             xys[k] = (x,y)
 
         k = 'cent'
@@ -884,6 +924,13 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
     else:
         xys = [(xy[0], xy[1])]
 
+
+    # Try to make the apertures follow the target motion:
+    #if apertureMode[0:4]=='circ':
+    #    flux, eflux, bg, testphot = aperturePhotometryFromPixelData(data, np.vstack(xys['xcorr2D']), apertures, resamp=resamp, verbose=verbose, retall=True)
+    #    outs = [aperturePhotometryFromPixelData(data[[iii]], np.vstack(xys['xcorr2D'])[:,[[iii]]], apertures, resamp=resamp, verbose=verbose, retall=True) for iii in xrange(data.shape[0])]
+        #pdb.set_trace()
+
     # Detrend the flux, picking optimal values for all parameters:
     if decorMode==1 or ('1' in decorMode):
         out = detrendFluxArcMotion(
@@ -898,7 +945,6 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
             goodvals=None, plotalot=plotalot, verbose=verbose, pool=pool)
         decorMode = '2D'
 
-    #pdb.set_trace()
     # Stick everything into a big container-object:
     output = baseObject()
     output.headers = headers
@@ -939,7 +985,7 @@ def runPixelDecorrelation(fn, loc, apertures, apertureMode='circular', resamp=1,
 
     return output
 
-def aperturePhotometryFromPixelData(stack, loc, apertures, resamp=1, recentroid=False, verbose=False, retall=True):
+def aperturePhotometryFromPixelData(stack, loc, apertures, resamp=1, recentroid=False, verbose=False, retall=True, pool=None):
     """
     :INPUTS:
       stack : 2D or 3D NumPy array.
@@ -955,17 +1001,26 @@ def aperturePhotometryFromPixelData(stack, loc, apertures, resamp=1, recentroid=
   
         Otherwise, we'll have to think of something fancier to do.
   
+      pool : multiprocessing.Pool() object
+        If you like, pass in a ready-made Pool() object for multithreading.
+
     :NOTES:
       May have problems for data whose motions are comparable to or
       larger than the PSF size.
       """
     # 2014-08-27 16:25 IJMC: Created
     # 2014-09-04 15:32 IJMC: Moved 'refineCentroid' to separate function.
+    # 2014-11-18 08:47 IJMC: Aperture photometry is now multithreaded;
+    #                        added pool option.
 
     if stack.ndim==2:
         stack = stack.reshape((1,)+stack.shape)
-
     nobs = stack.shape[0]
+    if np.array(loc).squeeze().ndim==1:
+        loc = np.array(loc).reshape(2, 1)
+        loc = np.tile(loc, (1, nobs))
+
+    loc0 = loc.mean(1)
     frame0 = np.median(stack, axis=0)
 
 
@@ -977,25 +1032,34 @@ def aperturePhotometryFromPixelData(stack, loc, apertures, resamp=1, recentroid=
         dap = None
         mask = apertures
 
-    phot0 = phot.aperphot(frame0, pos=loc, dap=dap, mask=mask, resamp=1, 
+    phot0 = phot.aperphot(frame0, pos=loc0, dap=dap, mask=mask, resamp=1, 
                           retfull=True)
     if recentroid:
-        loc = refineCentroid(frame0, apertures, loc=loc, mask=None, 
+        loc0 = refineCentroid(frame0, apertures, loc=loc0, mask=None, 
                              verbose=verbose)
 
 
-    phot1 = phot.aperphot(frame0, pos=loc, dap=dap, mask=mask, resamp=1, retfull=True)
-    phot4mask = phot.aperphot(frame0, pos=loc, dap=dap, mask=mask, resamp=resamp, retfull=True)
+    phot1 = phot.aperphot(frame0, pos=loc0, dap=dap, mask=mask, resamp=1, retfull=True)
+    phot4mask = phot.aperphot(frame0, pos=loc0, dap=dap, mask=mask, resamp=resamp, retfull=True)
     if verbose>=2:
         py.figure()
         py.imshow(np.log10(np.abs(1.+phot1.mask_targ * (phot1.frame-phot1.bg))))
         py.colorbar()
         py.title('log10(frame)')
 
-    if mask is None:
+    if mask is None and (loc.std(1)==0).all():
         mask = phot4mask.mask_targ + phot4mask.mask_sky*2.0
 
-    phots = [phot.aperphot(frame, pos=loc, dap=dap, mask=mask, resamp=resamp, retfull=False) for frame in stack]
+
+    #phots = [phot.aperphot(stack[ii], pos=loc[:,ii], dap=dap, mask=mask, resamp=resamp, retfull=True) for ii in xrange(nobs)]
+    allArgs = [(stack[ii], None, loc[:,ii], dap, mask, False, 999, resamp, True) for ii in xrange(nobs)]
+    if verbose: print "Computing aperture photometry...",
+    if pool is None:
+        if verbose: print " using a single processor."
+        phots = map(phot.aperphotHelperParallel, allArgs)
+    else:
+        if verbose: print " using multi-processing."
+        phots = pool.map(phot.aperphotHelperParallel, allArgs)
 
     flux = np.zeros(nobs, dtype=float)
     eflux = np.zeros(nobs, dtype=float)
@@ -1193,7 +1257,7 @@ def getCentroidsStandard(stack, mask=None, bg=None, strictlim=True):
 
     return x2, y2
 
-def subpix_reg_stack(stack, maxoff=2):
+def subpix_reg_stack(stack, maxoff=2, refmode=0):
     """
     Subpixel Registration Image Stack
 
@@ -1203,12 +1267,15 @@ def subpix_reg_stack(stack, maxoff=2):
     maxoff : Maximum offset allowed. Passed to `register_images.` Also
              creates a buffer region for each image in the stack
              besides the reference frame.
+    refmode : What to use as the 'template' image. If an integer, use
+              stack[refmode]; other options are 'mean' or 'median'.
 
     Returns
     -------
     dx, dy : tuple of 1D arrays
     """
- 
+    # 2014-10-24 21:08 IJMC: Added refmode
+
     stack = stack.copy()
     stack = ma.masked_array(stack,True)
 
@@ -1223,10 +1290,17 @@ def subpix_reg_stack(stack, maxoff=2):
     dx = np.zeros(Nimage)
     dy = np.zeros(Nimage)
     
+    if refmode=='mean':
+        template = stack.mean(0)
+    elif refmode=='median':
+        template = np.median(stack, axis=0)
+    else:
+        template = stack[0]
+    
     # Determine the shift between first frame and the others
     for i in range(Nimage):
         dx[i],dy[i] = register_images(
-            stack[0],stack[i], usfac=100.,zeromean=False,maxoff=maxoff)
+            template, stack[i], usfac=100.,zeromean=False,maxoff=maxoff)
 
     return dx,dy
 
@@ -1581,7 +1655,7 @@ def detrendFluxArcMotion(time, flux, xys, nordGeneralTrend=None,
                         tbin, fbin, junk, junk = tools.errxy(t_norm[goodvals], (flux/seval)[goodvals], tnbins, xmode='mean', ymode='median')
                         good = np.isfinite(tbin) * np.isfinite(fbin)
                         teval = np.interp(t_norm, tbin[good], fbin[good])
-                    if (teval==0).any():  tevel[teval==0] = 1.
+                    if (teval==0).any():  teval[teval==0] = 1.
                     sfit = np.polyfit(s_norm[goodvals], (flux / teval)[goodvals], nord-1)
                     seval = np.polyval(sfit, s_norm)
                     if (seval==0).any():  seval[seval==0] = 1.
@@ -1847,13 +1921,13 @@ def lsqDecorHelperBin(flux, t_norm, s_norm, y_norm, goodvals, nord_s, nord_y, tn
     #sz = svecs[goodvals].mean(0)
     seval = np.ones(nobs)
     iter = 0
-    maxiter = 200
+    maxiter = 1000
     while np.abs(dchi)>0.1 and iter < maxiter:
         tbin, fbin, junk, junk = tools.errxy(t_norm[goodvals], (flux/seval)[goodvals], tnbins, xmode='mean', ymode='median')
         good = np.isfinite(tbin) * np.isfinite(fbin)
         teval = np.interp(t_norm, tbin[good], fbin[good])
-        if (teval==0).any():  tevel[teval==0] = 1.
-        sfit, junk = an.lsq(allvecs.T[goodvals], (flux / teval)[goodvals])
+        if (teval==0).any():  teval[teval==0] = 1.
+        sfit, junk = an.lsq(allvecs.T[goodvals], (flux / teval)[goodvals], checkvals=False)
         seval = np.dot(sfit, allvecs)
         if (seval==0).any():  seval[seval==0] = 1.
         oldchi = newchi + 0.
@@ -1880,232 +1954,6 @@ def lsqDecorHelperBin(flux, t_norm, s_norm, y_norm, goodvals, nord_s, nord_y, tn
     return baseline, sff, rms1#, rms2
 
 
-def detrendFlux2DMotionBak(time, flux, xys, nordGeneralTrend=None,
-                         these_nord_arcs=None, these_nord_pixel1d=None,
-                        these_nord_pixel2d=None,
-                         goodvals=None, plotalot=False, verbose=False):
-    """See function name: remove effect of (projected 1D) motion on photometry.
-
-    :INPUTS:
-      time : 1D NumPy array
-        Time index at which flux, X, Y values were measured.
-
-      flux : 1D NumPy array
-        Raw flux of the target at each timestep, e.g. from aperture photometry.
-
-      xys: sequence of 2-tuples 
-        Sets of X & Y values, measured by various techniques.
-
-      nordGeneralTrend : int
-        Polynomial order to remove slow, overall trends from the photometry.
-
-        if Negative, we instead median-bin the data in bins of width
-        '-nordGeneralTrend' *days*, fit a linear spline, and divide
-        out that as the trend instead. 
-
-      these_nord_arcs : sequence of positive ints
-        Number of polynomial terms to use for fitting the rotated y'
-        positions as a function of x'. Thus, zero is invalid. Each
-        specified order will be tried. Passed to :func:`getArcLengths.
-
-      these_nord_pixel1d : sequence of positive ints
-        Number of polynomial terms to use for fitting the dependence
-        of 'flux' on the projected arc motions from x and y. If None,
-        defaults to range(3, 20)
-
-      goodvals : 1D Numpy array (of type bool)
-        True for usable mesurements; False elsewhere.
-
-
-    TODO
-    ----
-    Loop too deep. Figure out which polynomial order gives best RMS
-    for each method. Then compare the methods.
-    """
-    # 2014-10-05 21:38 IJMC: Created from 1D version.
-
-    nxy = len(xys)
-    nobs = time.size
-    output = baseObject() 
-    if nxy==0:
-        output.x, output.y = np.zeros((2, nobs))
-        output.s = np.zeros(nobs)
-        output.decor = np.median(flux)
-        output.rmsCleaned = flux.std() / output.decor
-        output.rmsHonest = flux.std() / output.decor
-        output.nord_arc = 0
-        output.nord_pixel1d = 0
-        output.arc_fit = np.array([1])
-        output.baseline = np.ones(nobs)
-        output.flux = flux
-        output.goodvals = np.ones(nobs, dtype=bool)
-        output.noThrusterFiring = np.ones(nobs, dtype=bool)
-        return output
-
-    # Compute the arc lengths:
-    res = getArcLengths(time, xys, these_nord_arcs, verbose=verbose)
-    ss, thrusterIndex, nord_arcs, arc_fits = res
-
-    # Parse inputs:
-    if these_nord_pixel1d is None:
-        these_nord_pixel1d = np.arange(2, 15)
-    if not isinstance(these_nord_pixel1d, np.ndarray):
-        these_nord_pixel1d = np.array(these_nord_pixel1d)
-    n1d = these_nord_pixel1d.size
-
-    if these_nord_pixel2d is None:
-        these_nord_pixel2d = np.arange(1, 6)
-    if not isinstance(these_nord_pixel2d, np.ndarray):
-        these_nord_pixel2d = np.array(these_nord_pixel2d)
-    n2d = these_nord_pixel2d.size
-
-    if goodvals is None:
-        goodvals0 = True - thrusterIndex
-    elif goodvals.ndim==1:
-        goodvals0 = np.tile(goodvals, (nxy, 1))
-    else:
-        goodvals0 = goodvals
-
-    goodvals = goodvals0.all(axis=0)
-
-    # Fit detrended flux to (projected) stellar motion:
-    baseline_decors = np.zeros((nxy, nobs), dtype=float)
-    RMSes = np.zeros(nxy)
-    detrendSplines = []
-    allRMSes = np.zeros((nxy, n1d, n2d), dtype=float)
-    honestRMSes = np.zeros((nxy, n1d, n2d), dtype=float)
-    all_sff_decors = np.zeros((nxy, n1d, n2d, nobs), dtype=float)
-    all_baseline_decors = np.zeros((nxy, n1d, n2d, nobs), dtype=float)
-    t_norm = normalizeVector(time)
-    if nordGeneralTrend>0:
-        det = 'poly'
-    else:
-        det = 'bin'
-        tbins = np.arange(time[goodvals].min(), time[goodvals].max(), 
-                          -nordGeneralTrend)
-        tnbins = 2 * ((tbins - time.min()) / (time.max() - time.min()) - 0.5)
-
-    if verbose: print "Fitting combined (baseline*motion) decorrelation -- in 2D!"
-    for ii,this_s in enumerate(ss):
-        x, y = xys[ii]
-        rot,sjunk,vjunk = np.linalg.svd(np.cov(x, y))
-        xp, yp = np.dot(rot, np.vstack((x, y)))
-        x_norm, y_norm = normalizeVector(xp), normalizeVector(yp)
-        s_norm = normalizeVector(this_s)
-
-        if verbose>1: print "Starting iteration %i/%i." % (ii+1, len(ss))
-        #nord_pixel1ds = np.zeros(n1d-1, dtype=int)
-        these_splines = []
-        #these_decors = np.zeros((nord_pixel1ds.size, nobs), dtype=float)
-        for j1, nord1 in enumerate(these_nord_pixel1d):
-            if verbose>1: print "Starting sub-iteration %i/%i." % (j1+1, n1d)
-            svecs = np.array([s_norm**n for n in range(nord1)])
-            for j2, nord2 in enumerate(these_nord_pixel2d):
-                if verbose>1: print "Starting sub-sub-iteration %i/%i." % (j2+1, n2d)
-                if False:   # Like Vanderburg & Johnson:
-                    fbins = np.linspace(this_s[goodvals].min(), 
-                                        this_s[goodvals].max(), nord1)
-
-                    sbin,fbin,junk,efbin = \
-                        tools.errxy(this_s[goodvals], fluxDetrend[goodvals], fbins,
-                                    clean=dict(nsigma=3, remove='both', niter=1),
-                                    yerr='std')
-
-                    finind = np.isfinite(sbin * fbin)
-                    these_splines.append(interpolate.UnivariateSpline(sbin[finind], fbin[finind], s=0, k=1))
-                    all_sff_decors[ii,jj] = these_splines[jj](this_s)
-                    fluxFinal = flux / all_sff_decors[ii,jj]
-                    if det=='poly':
-                        pfit_decor = an.polyfitr(time[goodvals]-time.min(), (flux/all_sff_decors[ii,jj])[goodvals], nordGeneralTrend, 3)
-                        all_baseline_decors[ii,jj] = np.polyval(pfit_decor, time-time.min())
-                    elif det=='bin':
-                        tbin, fbin, junk, junk = tools.errxy(time[goodvals], (flux/all_sff_decors[ii,jj])[goodvals], tbins, xmode='mean', ymode='median')
-                        all_baseline_decors[ii,jj] = np.interp(time-time.min(), tbin-time.min(), fbin)
-
-                else:   # Seems more reliable:
-                    yvecs = np.array([y_norm**n for n in range(1,nord2)])
-                    if yvecs.size>0:
-                        allvecs = np.vstack((svecs, yvecs))
-                    else:
-                        allvecs = svecs
-
-                    newchi = 9e99
-                    dchi = 9e99
-                    #sz = svecs[goodvals].mean(0)
-                    seval = np.ones(nobs)
-                    iter = 0
-                    maxiter = 2000
-                    while np.abs(dchi)>0.1 and iter < maxiter:
-                        if det=='poly':
-                            tfit = np.polyfit(t_norm[goodvals], (flux / seval)[goodvals], nordGeneralTrend-1)
-                            teval = np.polyval(tfit, t_norm)
-                        elif det=='bin':
-                            tbin, fbin, junk, junk = tools.errxy(t_norm[goodvals], (flux/seval)[goodvals], tnbins, xmode='mean', ymode='median')
-                            good = np.isfinite(tbin) * np.isfinite(fbin)
-                            teval = np.interp(t_norm, tbin[good], fbin[good])
-                        if (teval==0).any():  tevel[teval==0] = 1.
-                        #sfit = np.polyfit(s_norm[goodvals], (flux / teval)[goodvals], nord-1)
-                        #seval = np.polyval(sfit, s_norm)
-                        sfit, junk = an.lsq(allvecs.T[goodvals], (flux / teval)[goodvals])
-                        seval = np.dot(sfit, allvecs)
-                        if (seval==0).any():  seval[seval==0] = 1.
-                        oldchi = newchi + 0.
-                        newchi = ((flux - seval * teval)**2)[goodvals].sum()
-                        dchi = oldchi - newchi
-                        iter += 1
-
-                    if iter==maxiter and verbose>1:
-                        print "Did not converge on a (baseline*motion) fit after %i iterations." % iter
-                    elif verbose>2: 
-                        print "Converged after %i iterations." % iter
-                    all_baseline_decors[ii,j1,j2] = teval
-                    all_sff_decors[ii,j1,j2] = seval
-
-                allRMSes[ii,j1,j2] = (flux/all_sff_decors[ii,j1,j2]/ all_baseline_decors[ii,j1,j2])[goodvals].std()
-                honestRMSes[ii,j1,j2] = (flux/all_sff_decors[ii,j1,j2]/ all_baseline_decors[ii,j1,j2])[True - thrusterIndex[ii]].std()
-
-                if plotalot>=2:
-                    py.figure()
-                    py.plot(this_s[goodvals], ((flux/all_baseline_decors[ii,j1,j2]))[goodvals], 'oc')
-                    py.plot(this_s, all_sff_decors[ii,j1,j2], '.k', mfc='orange')
-                    #py.errorbar(sbin, fbin, efbin, fmt='ok', ms=11)
-                    py.title('%i, %i' % (ii, jj))
-
-        detrendSplines.append(these_splines)
-        minRMS = allRMSes[np.isfinite(allRMSes)].min()
-        allChisq = goodvals.sum() * (allRMSes/minRMS)**2
-        nparam = np.arange(n1d).reshape(n1d, 1) + np.arange(n2d)
-        allBIC = allChisq + np.log(goodvals.sum()) * nparam
-
-    # Select the model with the lowest final RMS:
-    bestBIC = allBIC[np.isfinite(allBIC)].min()
-    bestInd = (allBIC==bestBIC).nonzero()
-
-    output.bestInd = bestInd
-    output.x, output.y = xys[bestInd[0]]
-    output.s = ss[bestInd[0]].squeeze()
-    output.rmsCleaned = allRMSes[bestInd]
-    output.rmsHonest = honestRMSes[bestInd]
-    output.decor = all_sff_decors[bestInd].squeeze()
-    output.nord_arc = nord_arcs[bestInd[0]]
-    output.nord_pixel1d = (these_nord_pixel1d[bestInd[1]])
-    output.nord_pixel2d = (these_nord_pixel2d[bestInd[2]])
-    output.arc_fit = arc_fits[bestInd[0]]
-    output.baseline = all_baseline_decors[bestInd].squeeze()
-    output.flux = flux
-    output.goodvals = goodvals
-    output.noThrusterFiring = True - thrusterIndex[bestInd[0]]
-
-    if plotalot>=1:
-        py.figure()
-        py.plot(output.s, flux / output.baseline, 'or', mec='k')
-        py.plot(output.s[goodvals], (flux / output.baseline)[goodvals], 'oc', mec='k')
-        py.plot(output.s, output.decor, '.', color='orange')
-        py.xlabel('Arclength [pixels]', fontsize=15)
-        py.ylabel('Detrended Flux', fontsize=15)
-        py.minorticks_on()
-
-    return output
 
 
 
@@ -2156,7 +2004,7 @@ def plotPixelDecorResults(input, fs=10, shift=None):
     """
     # 2014-08-28 20:37 IJMC: Created
 
-    titstr = 'EPIC %i, Kp=%1.2f' % (input.headers[0]['KEPLERID'], input.headers[0]['KEPMAG'])
+    titstr = 'EPIC %i, Kp=%1.2f' % (input.epic, input.kepmag)
 
     py.rc('font',size=fs)
     if hasattr(input, 'search_rms') and \
@@ -2352,8 +2200,8 @@ def plotPixelDecorResults(input, fs=10, shift=None):
         trendstr = 'Poly. order, photometric poly:        %i' % input.nordGeneralTrend
     else:
         trendstr = 'Bin size for long-term detrend (days): %1.2f' % (-input.nordGeneralTrend)
-    tlines = ['EPIC %i' % input.headers[0]['KEPLERID'], 
-              'Kp = %1.2f mag' % input.headers[0]['KEPMAG'],
+    tlines = ['EPIC %i' % input.epic,
+              'Kp = %1.2f mag' % input.kepmag,
               'Aperture radii = (%1.2f, %1.2f, %1.2f) pix' % tuple(input.apertures),
               'PRF enclosed fraction = %s' % fracStr,
               'Photometry oversamp = %1.1f' % input.resamp,
@@ -2646,6 +2494,98 @@ def errfunc(*arg, **kw):
     
     return chisq
 
+def loadPRF(**kw):
+    """Load a Kepler PRF appropriate for the specified location.
+
+    :INPUTS:
+      file : str
+        Name of a Kepler pixel target file. The headers should contain
+        all necessary data.  Otherwise, you need to input module,
+        output, and coordinate values.
+
+      module : int
+        The CCD module of the detector used for these
+        observations. Any of 2-24 (inclusive), excepting 5 & 21.
+
+      output : int
+        The CCD output used for these observations. Any of 1-4
+        (inclusive).
+
+      loc : 2-sequence of ints
+        Location of target on the CCD.  This would correspond to
+        (CRVAL1P, CRVAL2P) in the FITS header.
+        
+      _prfpath : str
+        Path of the Kepler PRF files (available from
+        http://archive.stsci.edu/kepler/fpc.html). Default is
+        '~/proj/transit/kepler/prf/'
+
+    :RETURNS:
+      (prf, sampling)
+
+    :EXAMPLE:
+      ::
+
+       import k2
+       prf, sampling = k2.loadPRF(file=kplr060018142-2014044044430_lpd-targ.fits)
+
+    """
+    # 2014-09-03 17:50 IJMC: Created
+    # 2014-10-08 16:19 IJMC: Added to k2phot.pixel_decorrelation.
+
+    # Parse inputs:
+    if 'file' in kw:
+        file = kw['file']
+    else:
+        file = None
+    if 'module' in kw:
+        module = kw['module']
+    else:
+        module = None
+    if 'output' in kw:
+        output = kw['output']
+    else:
+        output = None
+    if 'loc' in kw:
+        xcen, ycen = kw['loc']
+    else:
+        loc = None
+    if '_prfpath' in kw:
+        _prfpath = kw['_prfpath']
+    else:
+        _prfpath = '' + prfpath()
+
+    if file is not None:
+        f = fits.open(file, mode='readonly')
+        module = f[0].header['module']
+        output = f[0].header['output']
+        xcen = f[2].header['crval1p']
+        ycen = f[2].header['crval2p']
+        f.close()
+
+    # Load the PRF FITS file:
+    f = fits.open(_prfpath + 'kplr%02i.%i_2011265_prf.fits' % (module, output), mode='readonly')
+
+    # Determine which PRF location to load (there are 5)
+    #x0s = np.array([12, 12, 1111, 1111, 549.5])
+    #y0s = np.array([20, 1043, 1043, 20, 511.5])
+    x0s = np.array([el.header['crval1p'] for el in f[1:]])
+    y0s = np.array([el.header['crval2p'] for el in f[1:]])
+    dist = np.sqrt((x0s - xcen)**2 + (y0s - ycen)**2)
+    best3 = (dist <= np.sort(dist)[3]).nonzero()[0][0:3]
+    prfWeights = 1./(dist[best3] + 1)
+    prfWeights /= prfWeights.sum()
+
+    # Construct the appropriately-weighted PRF:
+    prf = 0
+    for ii in range(3):
+        prf += prfWeights[ii] * f[1+best3[ii]].data
+
+    sampling = 1./f[1].header['cdelt1p']
+    f.close()
+
+    return prf, sampling
+
 def refineCentroid(frame, apertures, loc=None, mask=None, maxiter=np.inf, loctol=0.1, verbose=False):
     """Find (or refine) centroid position for a data frame.
 
@@ -2793,7 +2733,7 @@ def fitPhotometryFromPixelData(fn, stack, loc, apertures, errstack=None, recentr
     prf, sampling = loadPRF(file=fn)
     #loc = (33, 23)
     #sampling = 50
-    dframe = apertures[0]*2+1
+    dframe = np.round(apertures[0]*2+1).astype(int)
 
 
     weights = 1./errstack**2
@@ -3116,7 +3056,7 @@ def query_stars_in_stamp(pixfn,dkepmag=5):
     catcut = catcut.copy() 
     return catcut
 
-def get_stars_pix(pixfn,frame):
+def get_stars_pix(pixfn,frame, retsynframe=False, ids='all', prfpath=None,dkepmag=5, verbose=False):
     """
     Get stars position 
 
@@ -3127,6 +3067,10 @@ def get_stars_pix(pixfn,frame):
     ----------
     pixfn : pixel file name
     frame : reference frame.
+    retsynframe : bool; return synthetic frame
+    ids : which KIC/EPIC values to include
+    prfpath : filename of PRF file, or None
+    dkepmag : grab stars upto dkepmag fainter than target
     
     Return
     ------
@@ -3135,8 +3079,9 @@ def get_stars_pix(pixfn,frame):
 
     """
     # 2014-09-30 18:30 IJMC: Now output both catcut & shift
+    # 2014-11-16 09:43 IJMC: Added options: retsynframe, ids, dkepmag.
 
-    catcut = query_stars_in_stamp(pixfn)
+    catcut = query_stars_in_stamp(pixfn, dkepmag=dkepmag)
     
     # Determine where stars are supposed to fall based on wcs
     w = get_wcs(pixfn)
@@ -3147,26 +3092,54 @@ def get_stars_pix(pixfn,frame):
     # x and y fliped to account for python imshow convention
     y,x = np.mgrid[0:frame.shape[0],0:frame.shape[1]]
     synframe = np.zeros(frame.shape)
+    synframe_special = np.zeros(frame.shape)
     catcut['A'] = catcut['kepmag'] - np.min(catcut['kepmag'])
     catcut['A'] = 10**(-0.4 * catcut.A)
+
+    if ids=='all':
+        index = catcut.index
+    else:
+        index = ids
+
+    if prfpath is not None:
+        prf, sampling = loadPRF(file=pixfn)
+        prf = an.pad(prf, frame.shape[0]*sampling, frame.shape[1]*sampling)
+        peakloc = (prf==prf.max()).nonzero()
+
     for i in catcut.index:
         d = catcut.ix[i]
         g = gaussian(d['pix0'],d['pix1'],0.5)
-        synframe += d['A']*g(x,y)
-    synframe *= frame.sum() / synframe.sum()
+        if prfpath is not None:
+            prfmod = ld.shiftImages(d['A'] * prf, d['pix0']*sampling-peakloc[0], d['pix1']*sampling-peakloc[1]).squeeze()
+            thisstar = an.binarray(prfmod, sampling)
+        else:
+            thisstar = d['A']*g(x,y)
+        synframe += thisstar
+        if i in index:
+            synframe_special += thisstar
+
+    scalefactor = frame.sum() / synframe.sum()
+    synframe = synframe_special * scalefactor
+    #synframe *= scalefactor
+
 
     # Determine the shift between reference and synthetic images
     shift = register_images(frame, synframe, usfac=100.)
     shift = np.array(shift)
 
-    print "stars shifted by %s pixels from header WCS" % str(shift)
+    if verbose: 
+        print "stars shifted by %s pixels from header WCS" % str(shift)
     catcut['pix0']-=shift[0]
     catcut['pix1']-=shift[1]
 
     epic = fits.open(pixfn)[0].header['KEPLERID']
     xcen,ycen = catcut.ix[epic]['pix0 pix1'.split()]
-    print xcen,ycen
-    return catcut, shift
+    #print xcen,ycen
+
+    ret = catcut, shift
+    if retsynframe:
+        ret += (synframe,)
+    return ret
 
 
 class gaussian:
@@ -3198,8 +3171,112 @@ def imshow2(im,**kwargs):
     if kwargs.has_key('cmap')==False or kwargs['cmap'] is None:
         kwargs['cmap'] = cm.gray 
 
-    imshow(im,interpolation='nearest',origin='lower',
+    im = imshow(im,interpolation='nearest',origin='lower',
            extent=extent,**kwargs)
+
+    return im
+
+
+def estimateMaxAperRadius(pixfn, epic=None, maxContamination=0.1, tlimits=(1862.45, np.inf), _prfpath=None, doplot=False, annuluswidth=0.25, dkepmag=10, verbose=False):
+    """
+    Estimate maximum aperture radius for a K2 field.
+
+    :INPUTS:
+      pixfn : str
+        Filename of the Pixel
+
+    :OPTIONS:
+      epic : None, int, str, or sequence of ints
+        Target ID or IDs to examine. If None, use KEPLERID field in
+        pixfn. If 'all', compute for all IDs returned by
+        :func:`get_stars_pix`
+
+      maxContamination : scalar
+        Maximum allowable contamination.
+
+      tlimits : 2-sequence
+        Valid time interval (before application of 'bjd0'). 
+
+      _prfpath : str or None
+        Path of the Kepler PRF files (available from
+        http://archive.stsci.edu/kepler/fpc.html). Default is
+        '~/proj/transit/kepler/prf/'
+
+      doplot : bool
+        Whether to plot some diagnostic plots.
+
+      annuluswidth : positive int
+        Width of radial-profile annuli, in pixels.
+
+    :RETURNS:
+      maxAperRadius : 1D NumPy array
+    """
+    # 2014-11-16 16:07 IJMC: Created
+
+    import radial_data as rd
+
+    if epic is None:
+        epic = fits.open(pixfn)[0].header['KEPLERID']
+
+    cube,headers = loadPixelFile(pixfn, tlimits=tlimits)
+    time, data, edata = cube['time'],cube['flux'],cube['flux_err']
+    data, edata = preconditionDataCubes(data, edata, medSubData=True)
+    frame0 = np.median(data, axis=0)
+    x, y = np.arange(frame0.shape[1]), np.arange(frame0.shape[0])
+    xx, yy = np.meshgrid(x, y)
+
+    if _prfpath is None and os.path.isfile(prfpath()):
+        _prfpath = prfpath()
+
+    cat,b,im = get_stars_pix(pixfn, frame0, True, prfpath=_prfpath, dkepmag=dkepmag)
+    imm = ld.shiftImages(im, -b[0], -b[1]).squeeze()
+
+    if epic=='all':
+        epics = cat.epic
+    elif not hasattr(epic, '__iter__'):
+        epics = [epic]
+    else:
+        epics = np.array(epic, copy=True)
+
+    maxrads = np.zeros(len(epics), dtype=float)
+    for iii,epic in enumerate(epics): 
+        if (epic in cat.epic):
+            junk,junk,im0 = get_stars_pix(pixfn, frame0, True, prfpath=_prfpath, ids=[epic])
+            imm0 = ld.shiftImages(im0, -b[0], -b[1]).squeeze()
+            loc = cat.ix[epic]['pix0'], cat.ix[epic]['pix1']
+            rad = rd.radial_data(frame0, annulus_width=annuluswidth, x=xx-loc[0], y=yy-loc[1], rmax=max(frame0.shape)*0.5)
+            radmod  = rd.radial_data(imm, annulus_width=annuluswidth, x=xx-loc[0], y=yy-loc[1], rmax=max(frame0.shape)*0.5)
+            radmod0 = rd.radial_data(imm0, annulus_width=annuluswidth, x=xx-loc[0], y=yy-loc[1], rmax=max(frame0.shape)*0.5)
+
+            zind = radmod.numel>0
+
+            maxrad = np.interp(1. + maxContamination, (radmod.sum / radmod0.sum)[zind], radmod.r[zind])
+        else:
+            maxrad = -1
+        maxrads[iii] = maxrad
+
+        if doplot and maxrad>0:
+            py.figure()
+            ax1=py.subplot(121)
+            py.plot(radmod.r, radmod.sum / radmod0.sum, '.-'); 
+            py.plot([maxrad]*2, py.ylim(), '-r', linewidth=2)
+            py.title('EPIC %i' % epic)
+            ax1.set_xlabel('Radius')
+            ax1.set_ylabel('Enclosed Flux Ratio (field / singlestar)')
+            ax2=py.subplot(222)
+            ax3=py.subplot(224)
+
+            for ax, im2plot in zip([ax2, ax3], [frame0, imm]):
+                imdat = ax.imshow(np.log10(np.abs(im2plot))) 
+                axlim = ax.axis()
+                ax.plot(cat.pix0, cat.pix1, 'ok')
+                imdat.set_clim(.5, 5)
+                tools.drawCircle(loc[0], loc[1], maxrad, color='r', linewidth=3, fill=False, ax=ax)
+                ax.plot([loc[0]], [loc[1]], '.r')
+                ax.set_title('log10(frame)')
+                ax.axis(axlim)
+
+    return maxrads
 
 if __name__ == "__main__":
     sys.exit(main())
