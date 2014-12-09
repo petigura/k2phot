@@ -20,7 +20,9 @@ import sys
 from scipy import signal
 from mpl_toolkits.axes_grid1 import make_axes_locatable
 from astropy.io import fits as pyfits
-import pdb
+
+import pandas as pd
+import pixel_io
 
 
 def computeCentroids(data, edata, mask):
@@ -325,6 +327,39 @@ def plotLightCurves(time, flux, inTransit=None, fontsize=16, title='', fig=None,
     ax.minorticks_on()
     return fig, ax
 
+
+def plotDiagnostics_wrap(lcFits, lcPickle, pixFile, candcsv):
+    df = pd.read_csv(candcsv)
+    df = df.dropna(subset=['starname P t0 fit_p'.split()])
+    df['starname'] = df.starname.astype(int).astype(str)
+    df.index = df.starname 
+    cube,headers = pixel_io.loadPixelFile(pixFile)
+
+    starname = '%s' % headers[0]['KEPLERID'] 
+    d = df.ix[starname]
+    if type(d) is pd.core.frame.DataFrame:
+        print "Warning: %i columns, choosing first" % len(d)
+        d = d.iloc[0]
+
+    tt, per = 2454833+d['t0'], d['P']
+    depth = d['fit_p']**2
+    edepth = d['fit_p']**2/30
+    tau = d['fit_tau']
+    b = d['fit_b']
+
+    rsa = 2*np.pi*tau/per
+    tani = 1./(b*rsa)
+    t14 = (per/np.pi) * np.arcsin(rsa * np.sqrt((1+depth**0.5)**2 - b**2) / np.sin(np.arctan(tani)))
+
+    if not np.isfinite(t14): t14 = tau
+
+    time = pyfits.getdata(lcFits).time
+    inTransit = np.abs((time-tt + per/2.) % per - per/2) < (t14/2.)
+    poorTransitModel = (1./depth - inTransit) * depth
+
+    fig, axs = plotDiagnostics(lcFits, lcPickle, pixFile, poorTransitModel, medFiltWid=47, tt=tt, per=per, t14=t14, depth=depth, edepth=edepth)
+    return fig,axs
+    
 def plotDiagnostics(lcFits, lcPickle, pixFile, transitModel, fontsize=14, medFiltWid=1, tt=None, per=None, t14=None, depth=None, edepth=None, empiricalErrors=False):
     """An evolving construction -- combine all diagnostic plots in one.
 
@@ -380,7 +415,12 @@ def plotDiagnostics(lcFits, lcPickle, pixFile, transitModel, fontsize=14, medFil
 
     # Load & massage data files:
     dat = pyfits.getdata(lcFits)
-    input = tools.loadpickle(lcPickle)
+
+    import cPickle as pickle
+    from pixel_decorrelation import baseObject
+    with open(lcPickle,'r') as f:
+        input = pickle.load(f)
+
     cube, headers = pixel_decorrelation.loadPixelFile(pixFile, tlimits=[dat.time.min() - 2454833 - 1e-6, np.inf])
     time, data, edata = cube['time'],cube['flux'],cube['flux_err']
     data, edata = pixel_decorrelation.preconditionDataCubes(data, edata, medSubData=True)
@@ -404,6 +444,7 @@ def plotDiagnostics(lcFits, lcPickle, pixFile, transitModel, fontsize=14, medFil
     #    edata = np.array([edata, edata_phot]).max(0)
 
     # Prepare for Cloud Plot
+
     c1, c2, ec1, ec2 = computeCentroids(data, edata, input.crudeApertureMask)
     index = input.noThrusterFiring
     if depth is not None and edepth is not None:
@@ -1331,3 +1372,22 @@ def plotDIA_PRF_fit(pixFile, input, diffImage, e_diffImage, outImage, e_outImage
         ax.minorticks_on()
 
     return fig, axs
+
+if __name__=='__main__':
+    from argparse import ArgumentParser
+    from pixel_decorrelation import baseObject
+    p = ArgumentParser()
+    p.add_argument('lcFits',type=str)
+    p.add_argument('lcPickle',type=str)
+    p.add_argument('pixFile',type=str)
+    p.add_argument('candcsv',type=str)
+    args = p.parse_args()
+    
+    fig,axs = plotDiagnostics_wrap(
+        args.lcFits, args.lcPickle, args.pixFile, args.candcsv)
+    pathpdf = args.lcFits.replace('.fits','.pdf')
+    pathpng = args.lcFits.replace('.fits','.png')
+
+    fig.savefig(pathpdf)
+    fig.savefig(pathpng)
+

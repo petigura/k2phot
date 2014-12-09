@@ -117,8 +117,8 @@ except:
 
 __version__ = '0.3.0'
 
-_prfpath = os.path.expanduser('~/proj/transit/kepler/prf/')
 
+_prfpath = os.path.join(os.environ['K2PHOTFILES'],'PRF/')
 
 # Begin definitions!
 def prfpath():
