@@ -1,101 +1,26 @@
 """
 Routines that solve for the flat-field
 """
-import cPickle as pickle
 from argparse import ArgumentParser
-import copy
 import os.path
+from itertools import product
 
-import sqlite3
 import numpy as np
 from numpy import ma
 from scipy import optimize
-import numpy as np
-from pixel_decorrelation import imshow2
-
-
 import pandas as pd
 from astropy.io import fits
-from photutils import CircularAperture,aperture_photometry
-from photutils.aperture_funcs import do_circular_photometry
+
 from photutils.aperture_core import _sanitize_pixel_positions
-
-from scipy import ndimage as nd
-
-import h5plus
 from pdplus import LittleEndian as LE
-import photometry
-from pixel_decorrelation import imshow2,get_star_pos,loadPixelFile,get_stars_pix,subpix_reg_stack
-from skimage import measure
-from matplotlib import pylab as plt 
-from astropy import units as u    
-from pixel_decorrelation2 import plot_detrend
 
-from itertools import product
+from pixel_decorrelation import get_star_pos, loadPixelFile, get_stars_pix, \
+    subpix_reg_stack
 
-import circular_photometry
-
-
+from imagestack import ImageStack
 
 cadmaskfile = os.path.join(os.environ['K2PHOTFILES'],'C0_fmask.csv')
 cadmask = pd.read_csv(cadmaskfile,index_col=0)
-
-class ImageStack(object):
-    def __init__(self,fn,tlimits=None):
-        cube,headers = loadPixelFile(fn,tlimits=tlimits)
-        self.fn = fn
-        self.headers = headers
-        self.flux = cube['FLUX'].astype(float)
-        self.t = cube['TIME'].astype(float)
-        self.cad = cube['CADENCENO'].astype(int)
-        self.ts = pd.DataFrame(dict(t=self.t , cad=self.cad))
-        self.tlimits = tlimits
-
-        # Number of frames, rows, and columns
-        self.nframe,self.nrow,self.ncol = self.flux.shape 
-        self.npix = self.nrow*self.ncol
-
-    def set_apertures(self,locx,locy,radius):
-        """
-        Set the apertures used to compute photometry
-        """
-        if hasattr(locx,'__iter__'):
-            assert ((len(locx)==self.nframe) &
-                    (len(locy)==self.nframe) ), "Must have same length as array"
-        self.ts['locx'] = locx
-        self.ts['locy'] = locy
-
-        def get_ap_weights(locx,locy):
-            positions = np.array([[locx,locy]])
-            return circular_photometry.circular_photometry_weights(
-                self.flux[0],positions,radius)
-            
-        ap_weights = map(get_ap_weights,self.ts.locx,self.ts.locy)
-        ap_weights = np.array(ap_weights)
-        self.ap_weights = ap_weights
-
-    def get_sap_flux(self):
-        ap_flux = self.flux * self.ap_weights # flux falling in aperture
-        ap_flux = ap_flux.reshape(self.nframe,-1)
-        ap_flux = np.nansum(ap_flux,axis=1)
-        return ap_flux
-
-    def get_flux(self):
-        """Get flux cube
-        
-        For Imstack object we don't modify the flux cube, so this is a
-        no-op. For derived classes, we do and get_flux protechts
-        self.flux
-        """
-        return self.flux
-
-    def get_frame(self,i):
-        locx,locy = self.ts.iloc[i]['locx locy'.split()]
-        flux = self.get_flux()
-        ap_weights = self.ap_weights[i]
-        frame = Frame(
-            flux[i],locx=locx,locy=locy,r=self.radius,ap_weights=ap_weights)
-        return frame
 
 class FlatField(ImageStack):
     """
@@ -358,14 +283,15 @@ def read_hdf(filename,group,fn=None):
 
     im = ff # Reminder that I'm dealing with an Image stack
     im.ts = ts
-    im.set_apertures(im.ts['locx'],im.ts['locy'],header['radius'])
+    im.radius = header['radius']
+    im.set_apertures(im.ts['locx'],im.ts['locy'],im.radius)
 
     return im
 
 def flatfield_wrap(pixelfile,outdir,starname,tlimits=[-np.inf,np.inf]):
     ff = FlatField(pixelfile,tlimits=tlimits)
-    radii = range(2,8)
-#    radii = range(4,6)
+#    radii = range(2,8)
+    radii = range(4,5)
     moving = [0,1]
     weighted = [0,1]
     ff_pars = list(product(moving,weighted,radii))
@@ -393,77 +319,10 @@ def flatfield_wrap(pixelfile,outdir,starname,tlimits=[-np.inf,np.inf]):
 
         print ff
         groupname = weights_groupname(ff_par)
-        import pdb;pdb.set_trace()
 
         h5filename = os.path.join(outdir,'%s_weights.h5' % starname)
         ff.to_hdf(h5filename,groupname)
 
-    basename = starname
-    basename = os.path.join(outdir,basename)
-
-class Frame(np.ndarray):
-    def __new__(cls, input_array,locx=None,locy=None,r=None,pixels=None,ap_weights=None):
-        # Input array is an already formed ndarray instance
-        # We first cast to be our class type
-        obj = np.asarray(input_array).view(cls)
-        obj.locx = locx
-        obj.locy = locy
-        obj.r = r
-        obj.pixels = pixels
-        obj.ap_weights = ap_weights
-
-        return obj
-
-    def __array_finalize__(self, obj):
-        # see InfoArray.__array_finalize__ for comments
-        if obj is None: return
-
-    def plot(self):
-        apertures = CircularAperture([self.locx,self.locy], r=self.r)
-        logflux = np.log10(self)
-        logflux = ma.masked_invalid(logflux)
-        logflux.mask = logflux.mask | (logflux < 0)
-        logflux.fill_value = 0
-        logflux = logflux.filled()
-        imshow2(logflux)
-
-        if self.pixels is not None:
-            for i,pos in enumerate(self.pixels):
-                r,c = pos
-                plt.text(c,r,i,va='center',ha='center',color='Orange')
-        apertures.plot(color='Lime',lw=1.5,alpha=0.5)
-
-    def get_moments(self):
-        """
-        Return moments from frame:
-        Future work: This should be a method on a FrameObject
-        """
-        frame = ma.masked_invalid(self)
-        frame.fill_value = 0
-        frame = frame.filled()
-        frame *= self.ap_weights # Multiply frame by aperture weights
-
-        # Compute the centroid
-        m = measure.moments(frame)
-        moments = pd.Series(dict(m10=m[0,1],m01=m[1,0]))
-        moments /= m[0,0]
-
-        # Compute central moments (second order)
-        mu = measure.moments_central(frame,moments['m10'],moments['m01'])
-        c_moments = pd.Series(
-            dict(mupr20=mu[2,0], mupr02=mu[0,2], mupr11=mu[1,1]) )
-        c_moments/=mu[0,0]
-        moments = pd.concat([moments,c_moments])
-        return moments
-
-def test_frame_moments():
-    flux = np.ones((20,20))
-    locx,locy = 7.5,7.5
-    positions = np.array([locx,locy]).reshape(-1,2)
-    radius = 3
-    ap_weights = circular_photometry.circular_photometry_weights(
-        flux,positions,radius)
-    frame = Frame(flux,locx=locx,locy=locy,r=radius,ap_weights=ap_weights)
 
 def test_restore():
     from matplotlib.pylab import *
