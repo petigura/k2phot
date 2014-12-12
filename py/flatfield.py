@@ -290,8 +290,8 @@ def read_hdf(filename,group,fn=None):
 
 def flatfield_wrap(pixelfile,outdir,starname,tlimits=[-np.inf,np.inf]):
     ff = FlatField(pixelfile,tlimits=tlimits)
-#    radii = range(2,8)
-    radii = range(4,5)
+    radii = range(2,8)
+#    radii = range(4,5)
     moving = [0,1]
     weighted = [0,1]
     ff_pars = list(product(moving,weighted,radii))
@@ -315,14 +315,10 @@ def flatfield_wrap(pixelfile,outdir,starname,tlimits=[-np.inf,np.inf]):
         else:
             pass
 
-        ff.get_sap_flux()
-
         print ff
         groupname = weights_groupname(ff_par)
-
         h5filename = os.path.join(outdir,'%s_weights.h5' % starname)
         ff.to_hdf(h5filename,groupname)
-
 
 def test_restore():
     from matplotlib.pylab import *
@@ -343,7 +339,6 @@ def test_restore():
     plot(fm_after_fit,label='after reweighting')
     plot(fm_after_fit_resotred,label='after resotre and reweighting')
     legend()
-
 
 def get_dfcad(cad, n_cad_per_bin=50):
     """

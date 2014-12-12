@@ -4,9 +4,10 @@ from skimage import measure
 from photutils import CircularAperture
 import pandas as pd
 from pixel_decorrelation import imshow2
-
+import circular_photometry
 class Frame(np.ndarray):
-    def __new__(cls, input_array,locx=None,locy=None,r=None,pixels=None,ap_weights=None):
+    def __new__(cls, input_array,locx=None,locy=None,r=None,pixels=None,
+                ap_weights=None):
         # Input array is an already formed ndarray instance
         # We first cast to be our class type
         obj = np.asarray(input_array).view(cls)
@@ -36,10 +37,27 @@ class Frame(np.ndarray):
                 plt.text(c,r,i,va='center',ha='center',color='Orange')
         apertures.plot(color='Lime',lw=1.5,alpha=0.5)
 
+
+    def nearbystars(fn,epic):
+        """
+        Query the catalog for nearby stars. Pull the WCS from the fits file
+        """
+        catcut, shift = get_stars_pix(fn,frame0, dkepmag=dkepmag)
+        epic = headers[0]['KEPLERID']
+        xcen,ycen = catcut.ix[epic]['pix0 pix1'.split()]
+
     def get_moments(self):
         """
-        Return moments from frame:
-        Future work: This should be a method on a FrameObject
+        Return moments from frame
+
+        Returns
+        -------
+        moments : pandas Series object with the following keys
+                  - m10 : row position of centroid
+                  - m01 : col position of centroid
+                  - mupr20 : higher moments
+                  - mupr02 : higher moments
+                  - mupr11 : higher moments
         """
         frame = ma.masked_invalid(self)
         frame.fill_value = 0
@@ -61,9 +79,50 @@ class Frame(np.ndarray):
 
 def test_frame_moments():
     flux = np.ones((20,20))
-    locx,locy = 7.5,7.5
+    locx,locy = 10.5,7.5
     positions = np.array([locx,locy]).reshape(-1,2)
     radius = 3
     ap_weights = circular_photometry.circular_photometry_weights(
         flux,positions,radius)
     frame = Frame(flux,locx=locx,locy=locy,r=radius,ap_weights=ap_weights)
+    moments = frame.get_moments()
+
+    firstmoments = moments['m01 m10'.split()]
+    assert np.allclose(firstmoments,positions),\
+        'Centroid must match center of aperture'
+
+
+def plot_label(image,catcut,epic,colorbar=True, shift=None, retim=False, 
+               cmap=None):
+    """
+    """
+
+    # 2014-09-30 18:33 IJMC: Added shift option.
+    # 2014-10-07 20:58 IJMC: Added 'retim' flag and 'cmap' option.
+    im = imshow2(image, cmap=cmap)
+    if colorbar:
+        py.colorbar(orientation='vertical')
+
+    targstar = catcut.ix[epic]
+    if shift is None:
+        x0,x1 = 0,0
+    else:
+        x0,x1 = shift[0:2]
+
+    def label_stars(x,**kwargs):
+        py.text(x['pix0'] + x0,x['pix1'] + x1,'%(epic)09d, %(kepmag).1f' % x,**kwargs)
+
+    py.plot(catcut['pix0']+x0,catcut['pix1']+x1,'oc')
+    catcut.apply(lambda x : label_stars(x,color='c',size='x-small'),axis=1)
+
+    py.plot(targstar['pix0']+x0,targstar['pix1']+x1,'o',color='Tomato')
+    label_stars(targstar,color='Tomato',size='x-small')
+
+    if retim:
+        ret = im
+    else:
+        ret = None
+
+    return ret
+
+

@@ -60,3 +60,19 @@ class ImageStack(object):
         frame = Frame(
             flux[i],locx=locx,locy=locy,r=self.radius,ap_weights=ap_weights)
         return frame
+
+    def get_frames(self):
+        flux = self.get_flux()
+        def get_frame(i):
+            ap_weights = self.ap_weights[i]
+            tsi = self.ts.iloc[i]
+
+            frame = Frame(
+                flux[i], locx=tsi['locx'], locy=tsi['locy'], r=self.radius,
+                ap_weights=ap_weights)
+            return frame
+
+        frames = map(get_frame,range(self.nframe))
+        return frames
+
+
