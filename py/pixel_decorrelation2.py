@@ -28,183 +28,45 @@ def lc_to_X(lc,columns):
         X = X.reshape(-1,1)
     return X
 
-class decorlc(object):
-    def __init__(self,lc0):
-        """
-        """
-        # Protect the input
-        lc = lc0.copy()
+def plot_position_PCs(lc):
+    test = plt.scatter(
+        lc.pos_pc0,lc.pos_pc1,c=lc.f,linewidths=0,alpha=0.8,s=20)
 
-        # Save a copy of the not normalized flux
-        lc['f_not_normalized'] = lc['f']
-        lc['f'] /= lc.f.median()
-        lc['f'] -= 1
+    plt.xlabel('pos_pc0')
+    plt.ylabel('pos_pc1')
+    plt.colorbar()
 
-        self.nugget = (1.6*np.median(np.abs(lc.f)))**2
-        corrlen = 10
-
-        self.time_theta = 1./corrlen
-        self.vmin,self.vmax = np.percentile(lc.f,[1,99])
-        lc['gpmask'] = ~lc.f.between(self.vmin,self.vmax)
-
-        self.lc = lc # Save array with out dropped columns
-
-    def get_lc_gp(self):
-        """
-        Get light curve used in gp (uses fmask and gpmask)
-        """
-        lc = self.lc
-        mask =  lc.fmask | lc.gpmask
-        return lc[~mask]
-
-    def set_position_PCs(self):
-        lc = self.lc
-        X = lc_to_X(lc,'dx dy'.split())
-        pca = PCA(n_components=2)
-        X_r = pca.fit(X).transform(X)
-        X_r = X_r / np.std(X_r,axis=0)
-        for i in [0,1]:
-            lc['pos_pc%i' %i ] = X_r[:,i]
-        self.lc = lc
-
-    def plot_detrend(self,columns):
-        plot_detrend(self.lc,columns)
-
-    def decorrelate_position(self):
-        self.decorrelate_gp(
-            self.gp_xy,'_xy','pos_pc0 pos_pc1'.split())
-
-    def plot_position_PCs(self):
-        lc = self.lc
-        test = plt.scatter(
-            lc.pos_pc0,lc.pos_pc1,c=lc.f,vmin=self.vmin,vmax=self.vmax,
-            linewidths=0,alpha=0.8,s=20)
-
-        plt.xlabel('pos_pc0')
-        plt.ylabel('pos_pc1')
-        plt.colorbar()
-        return test
-
-    def plot_gp_xy(self):
-        lc = self.lc
-        desc = lc.describe()
-        res = 50
-        lim1 = desc.ix['min','pos_pc0'], desc.ix['max','pos_pc0']
-        lim2 = desc.ix['min','pos_pc1'], desc.ix['max','pos_pc1']
-        x1, x2 = np.meshgrid(np.linspace(lim1[0],lim1[1], res),
-                             np.linspace(lim2[0],lim2[1], res))
-        xx = np.vstack([x1.reshape(x1.size), x2.reshape(x2.size)]).T
-        y_pred, MSE = self.gp_xy.predict(xx, eval_MSE=True)
-        y_pred = y_pred.reshape((res,res))
-        extent = (lim1[0],lim1[1],lim2[0],lim2[1])
-        plt.imshow(
-            np.flipud(y_pred), alpha=0.8, extent=extent,aspect='auto',
-            vmin=self.vmin,vmax=self.vmax)
-
-    def decorrelate_position_and_time(self):
-        self.decorrelate_gp(
-            self.gp_time_xy,'_time_xy','t pos_pc0 pos_pc1'.split())
-
-    def decorrelate_gp(self,gp,suffix,columns):
-        lc_gp = self.get_lc_gp()
-
-        # Fit the GP light curve with dropped indecies
-        X = lc_to_X(lc_gp,columns)
-        gp = gp.fit(X,lc_gp['f'])
-
-        # Use the GP to predict the flux for masked and unmasked light curve
-
-        lc = self.lc
-        X = lc_to_X(lc,columns)
-        gpcolumn = 'f_gp'+suffix
-        lc[gpcolumn] = gp.predict(X)
-        lc['fdt'+suffix] = lc['f'] - lc[gpcolumn]
-        self.lc = lc
-
-    def plot_decorrelate_position_and_time(self):
-        columns = 'f f_gp_time_xy fdt_time_xy'.split()
-        self.plot_detrend(columns)
-
+def plot_gp_pos(lc,gp_pos):
+    desc = lc.describe()
+    res = 50
+    lim1 = desc.ix['min','pos_pc0'], desc.ix['max','pos_pc0']
+    lim2 = desc.ix['min','pos_pc1'], desc.ix['max','pos_pc1']
+    x1, x2 = np.meshgrid(np.linspace(lim1[0],lim1[1], res),
+                         np.linspace(lim2[0],lim2[1], res))
+    xx = np.vstack([x1.reshape(x1.size), x2.reshape(x2.size)]).T
+    y_pred, MSE = gp_pos.predict(xx, eval_MSE=True)
+    y_pred = y_pred.reshape((res,res))
+    extent = (lim1[0],lim1[1],lim2[0],lim2[1])
+    plt.imshow(
+        np.flipud(y_pred), alpha=0.8, extent=extent,aspect='auto')
 
 class Lightcurve(pd.DataFrame):
     def set_position_PCs(self):
         X = lc_to_X(self,'dx dy'.split())
         pca = PCA(n_components=2)
         X_r = pca.fit(X).transform(X)
-        X_r = X_r / np.std(X_r,axis=0)
         for i in [0,1]:
             self['pos_pc%i' %i ] = X_r[:,i]
 
-    def plot_position_PCs(self):
-        lc = self.lc
-        test = plt.scatter(
-            lc.pos_pc0,lc.pos_pc1,c=lc.f,vmin=self.vmin,vmax=self.vmax,
-            linewidths=0,alpha=0.8,s=20)
+    def get_fm(self,col,maskcol='fmask'):
+        return ma.masked_array(col,maskcol)
 
-        plt.xlabel('pos_pc0')
-        plt.ylabel('pos_pc1')
-        plt.colorbar()
-        return test
-
-
-
-fmad = lambda x : np.median(abs(x))
-fnugget = lambda x : (1.6*fmad(x))**2
-
-def fit_gp_sigma_clip(gp,X,y):
-    binlier = np.ones(X.shape[0]).astype(bool)
-    binlier_last = binlier.copy()
-    colors='rcyrcy'
-    i = 0 
-    while (not np.all(binlier==binlier_last)) or (i==0):
-        print binlier.sum(),i
-        gp.fit(X[binlier,:],y[binlier])
-        y_pred = gp.predict(X)
-        mad = fmad(y - y_pred)
-
-        binlier_last = binlier.copy()
-        binlier = abs(y - y_pred) < 4*mad
-        i+=1
-
-    return gp
-
-def fit_gp_time_and_pos(lc):
-     gpkw = dict(regr='constant',corr='squared_exponential',nugget=fnugget(lc['f']))
-
-    X_t = lc_to_X(lc,'t')
-    X_pos = lc_to_X(lc,['pos_pc0','pos_pc1'])
-    y = np.array(lc['f'])
-
-    gp_t = GaussianProcess(theta0=3,**gpkw)
-
-    thetaU = [1,1]
-    thetaL = [1e-3,1e-3]
-    theta0 = [1e-2,1e-2]
-    gp_pos = GaussianProcess(theta0=theta0,thetaU=thetaU,thetaL=thetaL,**gpkw)
-
-    fdt_pos_last = y.copy()
-    fdt_pos = y.copy()
-
-    i = 0
-    while (not np.all(fdt_pos==fdt_pos_last)) or (i==0):
-        gp_t = fit_gp_sigma_clip(gp_t,X_t,fdt_pos)
-        ftnd_t = gp_t.predict(X_t)
-        fdt_t = y - ftnd_t
-
-        gp_pos = fit_gp_sigma_clip(gp_pos,X_pos,fdt_t)
-        ftnd_pos = gp_xy.predict(X_pos)
-
-        fdt_pos_last = fdt_pos.copy()
-        fdt_pos = y - ftnd_pos
-
-        fdt_t_pos = y - ftnd_t - ftnd_pos
-        gp_t.nugget = gp_pos.nugget = fnugget(fdt_t_pos)
-        
-        i+=1
-
-    return ftnd_pos,ftnd_t
-
-
+    def get_X(self,col,maskcol=None):
+        if maskcol is None:
+            return lc_to_X(self,col)
+        else:
+            lc2 = self[~self[maskcol]]
+            return lc_to_X(lc2,col)
 
 def plot_detrend(lc,columns):
     """
@@ -219,7 +81,10 @@ def plot_detrend(lc,columns):
     get_masked = lambda key : ma.masked_array(lc[key],lc['fmask'])
     res = map(get_masked,columns)
     f,ftnd,fdt = res
-    fses,ftndses,fdtses = map(get_ses,res)
+
+    fses = f / ma.median(f) - 1 
+    fdtses = fdt / ma.median(fdt) - 1 
+    fses,fdtses = map(get_ses,[fses,fdtses])
 
     fig,axL = plt.subplots(nrows=2,figsize=(12,6),sharex=True,sharey=True)
 
@@ -240,15 +105,19 @@ def get_ses(f):
     ses = ses.ix['mad_6-cad-mtd','value']
     return ses
 
-def read_weight_file(h5filename):
+def read_weight_file(h5filename,debug=False):
     with h5py.File(h5filename,'r') as h5:
         groupnames = [i[0] for i in h5.items()]
 
-    dL = []
-    for im,groupname in enumerate(groupnames):
-        im = flatfield.read_hdf(h5filename,groupname)
-        dL+=[dict(name=groupname,im=im)]
-    dfweights = pd.DataFrame(dL)
+    dfweights = pd.DataFrame(groupnames,columns=['name'])
+    if debug:
+        dfweights = dfweights[dfweights.name.str.contains('r=3|r=4') &
+                              dfweights.name.str.contains('mov=1_weight=1')]
+
+    dfweights['im'] = ''
+    for index,sweights in dfweights.iterrows():
+        sweights['im'] = flatfield.read_hdf(h5filename,sweights['name'])
+
     return dfweights
 
 def im_to_lc(im):
@@ -262,20 +131,154 @@ def im_to_lc(im):
     lc['dy'] = lc['m10']
     return lc
 
-def decorrelate_position_and_time(dc):
-    dc.set_position_PCs()
-    gpkw = dict(regr='constant',corr='squared_exponential',nugget=dc.nugget)
+fmad = lambda x : np.median(abs(x))
+fnugget = lambda x : (1.6 * fmad(x - np.median(x) ))**2
+
+def fit_gp_sigma_clip(gp,X,y,verbose=False):
+    binlier = np.ones(X.shape[0]).astype(bool)
+    binlier_last = binlier.copy()
+    colors='rcyrcy'
+    i = 0 
+    done = False
+    while not done:
+        if verbose:
+            print binlier.sum(),i
+        gp.fit(X[binlier,:],y[binlier])
+        y_pred = gp.predict(X)
+        mad = fmad(y - y_pred)
+
+        binlier_last = binlier.copy()
+        binlier = abs(y - y_pred) < 4*mad
+
+        if np.all(binlier_last==binlier) or (i >= 3):
+            done = True
+
+        i+=1
+
+    return gp
+
+def decorrelate_position_and_time(lc,verbose=True):
+    lc = Lightcurve(lc)
+
+    lc['f'] /= np.median(lc['f'])
+    lc['f'] -= 1
+
+
+    lc.set_position_PCs()
+
+    X_t = lc_to_X(lc,'t')
+    X_pos = lc_to_X(lc,['pos_pc0','pos_pc1'])
+    y = np.array(lc['f'])
+
+    gpkw = dict(
+        regr='linear',corr='squared_exponential',nugget=fnugget(y))
+
+    gp_t = GaussianProcess(theta0=3,**gpkw)
+
     thetaU = [1,1]
     thetaL = [1e-3,1e-3]
     theta0 = [1e-2,1e-2]
-    dc.gp_xy = GaussianProcess(theta0=theta0,thetaU=thetaU,thetaL=thetaL,**gpkw)
-    dc.decorrelate_position()
+    gp_pos = GaussianProcess(theta0=theta0,thetaU=thetaU,thetaL=thetaL,**gpkw)
 
-    # time and xy GP decorrelation
-    theta0 = [dc.time_theta] + list(dc.gp_xy.theta_[0])
-    dc.gp_time_xy = GaussianProcess(theta0=theta0,**gpkw)
-    dc.decorrelate_position_and_time()
-    return dc
+    fdt_pos_last = y.copy()
+    fdt_pos = y.copy()
+
+    i = 0
+
+    done = False
+    while not done:
+        ndiff = (fdt_pos - fdt_pos_last) / fdt_pos_last
+        chi2 = np.sum(ndiff**2) / len(fdt_pos)
+
+        gp_t = fit_gp_sigma_clip(gp_t,X_t,fdt_pos,verbose=verbose)
+        ftnd_t = gp_t.predict(X_t)
+        fdt_t = y - ftnd_t
+
+        gp_pos = fit_gp_sigma_clip(gp_pos,X_pos,fdt_t,verbose=verbose)
+        ftnd_pos = gp_pos.predict(X_pos)
+
+        fdt_pos_last = fdt_pos.copy()
+        fdt_pos = y - ftnd_pos
+
+        fdt_t_pos = y - ftnd_t - ftnd_pos
+#        gp_t.nugget = gp_pos.nugget = fnugget(fdt_t_pos)
+
+        if np.allclose(fdt_pos,fdt_pos_last) or (i >= 3):
+            done = True
+        i+=1
+
+
+    lc['fdt_pos'] = fdt_pos
+    lc['ftnd_pos'] = ftnd_pos
+
+    lc['fdt_t'] = fdt_t
+    lc['ftnd_t'] = ftnd_t
+    return lc,gp_t,gp_pos
+
+def decorrelate_position_and_time_1D(lc,verbose=False):
+    lc = Lightcurve(lc)
+    medflux = np.median(lc['f'])
+    lc['f'] /= medflux
+    lc['f'] -= 1
+    lc.set_position_PCs()
+
+    gpkw = dict(
+        regr='constant',corr='squared_exponential',nugget=fnugget(lc['f']))
+
+    gp_t = GaussianProcess(theta0=3,**gpkw)
+    gp_pos = GaussianProcess(theta0=0.03,thetaL=0.01,thetaU=0.1,**gpkw)
+
+    lc['fdt_pos_last'] = lc['f'].copy()
+    lc['fdt_pos'] = lc['f'].copy()
+
+    i = 0
+    done = False
+    while not done:
+        ndiff = (lc['fdt_pos'] - lc['fdt_pos_last']) / lc['fdt_pos_last']
+        chi2 = np.sum(ndiff**2) / len(lc)
+        if verbose:
+            print i, chi2
+
+        # Detrend against time
+        lc_gp = Lightcurve(lc[~lc.fmask])
+        gp_t = fit_gp_sigma_clip(
+            gp_t,lc_gp.get_X('t') ,np.array(lc_gp['fdt_pos']),verbose=verbose)
+
+        lc['ftnd_t'] = gp_t.predict( lc.get_X(['t']) )
+        lc['fdt_t'] = lc['f'] - lc['ftnd_t']
+
+        lc_segments = np.array_split(lc,6)
+        for lc_seg in lc_segments:
+            lc_seg.__class__ = Lightcurve
+            lc_seg_gp = Lightcurve(lc_seg[~lc_seg.fmask])
+
+            gp_pos = fit_gp_sigma_clip(
+                gp_pos, lc_seg_gp.get_X(['pos_pc0']), 
+                np.array(lc_seg_gp['fdt_t']),
+                verbose=verbose)
+
+#            gp_pos.fit(X_pos,lc_seg['fdt_t'])
+            lc_seg['ftnd_pos'] = gp_pos.predict(lc_seg.get_X(['pos_pc0']))
+
+        lc = pd.concat(lc_segments)
+        lc['fdt_pos_last'] = lc['fdt_pos'].copy()
+        lc['fdt_pos'] = lc['f'] - lc['ftnd_pos']
+
+        lc['ftnd_t_pos'] =  lc['ftnd_t'] + lc['ftnd_pos']
+        lc['fdt_t_pos'] = lc['f'] - lc['ftnd_t_pos']
+
+        gp_pos.nugget = gp_t.nugget = fnugget(lc['fdt_t_pos'])
+        if np.allclose(lc['fdt_pos'],lc['fdt_pos_last']) or (i >= 5):
+            done = True
+
+        i+=1
+
+    lc = lc.drop(['fdt_pos_last'],axis=1)
+    for col in 'f ftnd_t fdt_t ftnd_pos fdt_pos ftnd_t_pos fdt_t_pos'.split():
+        lc[col] +=1
+        lc[col] *= medflux
+
+    return lc
 
 @contextlib.contextmanager
 def FigureManager(basename,suffix=None):
@@ -301,39 +304,30 @@ def FigureManager(basename,suffix=None):
 #        if self.basename is not None:
 #            plt.savefig(self.basename+self.suffix)
 
-def pixel_decorrelation_plots(dfdc,dcmin,basename=None):
-    with FigureManager(basename,suffix='_0-ses-vs-aperture-size.png'):
-        plot_ses_vs_aperture_size(dfdc)
-        
-    with FigureManager(basename,suffix='_xy.png'):
-        dcmin.plot_position_PCs()
-        dcmin.plot_gp_xy()
 
-    with FigureManager(basename,suffix='_gp_time_xy.png'):
-        dcmin.plot_decorrelate_position_and_time()
 
-def plot_ses_vs_aperture_size(dfdc):
-    dfdc['r'] = dfdc.name.apply(lambda x : x.split('r=')[1][0]).astype(float)
-    dfdc['method'] = dfdc.name.apply(lambda x : x.split('r=')[0][:-1])
-    g = dfdc.groupby('method')
-    sdcmin = dfdc.ix[dfdc['ses'].argmin()]
+def plot_ses_vs_aperture_size(dflc):
+    dflc['r'] = dflc.name.apply(lambda x : x.split('r=')[1][0]).astype(float)
+    dflc['method'] = dflc.name.apply(lambda x : x.split('r=')[0][:-1])
+    g = dflc.groupby('method')
+    slcmin = dflc.ix[dflc['ses'].argmin()]
 
     plt.semilogy()
     for method,idx in g.groups.iteritems():
-        df = dfdc.ix[idx]
+        df = dflc.ix[idx]
         plt.plot(df.r,df.ses,'o-',label=method)
 
-    plt.plot(sdcmin['r'],sdcmin['ses'],'or',mfc='none',ms=15,mew=2,mec='r')
+    plt.plot(slcmin['r'],slcmin['ses'],'or',mfc='none',ms=15,mew=2,mec='r')
     plt.legend()
 
     xlab = 'Target Aperture Radius [pixels]'
-    txtStr = 'Minimum: %(ses).1f ppm at R=%(r).1f pixels' % sdcmin
+    txtStr = 'Minimum: %(ses).1f ppm at R=%(r).1f pixels' % slcmin
 
     plt.xlabel(xlab, )
-    plt.ylabel('RMS [ppm]', )
+    plt.ylabel('RMS c[ppm]', )
     plt.minorticks_on()
 
-    desc = dfdc.ses.describe()
+    desc = dflc.ses.describe()
     factor = 1.2
     yval = desc['min']/factor,desc['max']*factor
     plt.ylim(yval)
@@ -400,32 +394,62 @@ def plot_frames():
 
 def pixel_decorrelation(h5filename,debug=True):
     # Load up DataFrame with 
-    dfdc = read_weight_file(h5filename)
-    if debug:
-        dfdc = dfdc[dfdc.name.str.contains('r=3|r=4')]
+    dflc = read_weight_file(h5filename,debug=debug)
+    dflc['lc'] = map(im_to_lc,dflc.im.tolist())
 
-    dfdc['dc'] = map(im_to_dc,dfdc.im.tolist())
-    dfdc['ses'] = None
-    for index,sdc in dfdc.iterrows():
-        dc = sdc['dc']
-        dc = decorrelate_position_and_time(dc)
-        fdt = ma.masked_array(dc.lc['fdt_time_xy'],dc.lc['fmask'])
-        sdc['dc'] = dc
-        sdc['ses'] = get_ses(fdt)
-        print "%(name)s, mad_6-cad-mtd = %(ses)i" % sdc
+    dflc['ses'] = None
+    dflc['gp_t'] = None
+    dflc['gp_pos'] = None
+
+    for index,slc in dflc.iterrows():
+        lc = slc['lc']
+        lc = decorrelate_position_and_time_1D(lc)
+
+        fdt = ma.masked_array(lc['fdt_pos'],lc['fmask'])
+        fdt = fdt / ma.median(fdt) - 1
+        slc['lc'] = lc
+        slc['ses'] = get_ses(fdt)
+        print "%(name)s, mad_6-cad-mtd = %(ses)i" % slc
 
     # Handle plotting
-    basename = h5filename.split('.')[0]
+    basename = h5filename.split('_')[0]
 
-    dfdc = dfdc.convert_objects()
-    sdcmin = dfdc.ix[dfdc['ses'].argmin()]
-    dcmin = sdcmin['dc']
-    pixel_decorrelation_plots(dfdc,dcmin,basename=basename)
-    return dfdc
+    dflc = dflc.convert_objects()
+    slcmin = dflc.ix[dflc['ses'].argmin()]
+    lcmin = slcmin['lc']
 
+
+    with FigureManager(basename,suffix='_0-ses-vs-aperture-size.png'):
+        plot_ses_vs_aperture_size(dflc)
+
+    with FigureManager(basename,suffix='_pos_pc0.png'):
+        fdt_t = ma.masked_array(lc['fdt_t'],lc['fmask'])
+        plt.plot(lc['pos_pc0'],fdt_t,'.')
+        plt.plot(lc['pos_pc0'],lc['ftnd_pos'],'.')
+
+        desc = lc.ftnd_pos.describe()
+        spread = desc['max'] - desc['min']
+        plt.ylim( desc['min'] - spread, desc['max'] + spread )
+        plt.gcf().set_tight_layout(True)
+
+    with FigureManager(basename,suffix='_gp_t_pos.png'):
+        plot_detrend(lcmin,'f ftnd_t_pos fdt_t_pos'.split())
+
+    with FigureManager(basename,suffix='_gp_t_pos_zoom.png'):
+        plot_detrend(lcmin,'f ftnd_t_pos fdt_t_pos'.split())
+        desc = lcmin.ftnd_t_pos.describe()
+        spread = desc['max'] - desc['min']
+        plt.ylim( desc['min'] - spread, desc['max'] + spread )
+        plt.gcf().set_tight_layout(True)
+    
+    outfile = basename+'.h5'
+    pd.DataFrame(lcmin).to_hdf(outfile,'lc')
+    import pdb;pdb.set_trace()
+    return dflc
+        
 if __name__ == "__main__":
     p = ArgumentParser(description='Pixel Decorrelation')
     p.add_argument('h5filename',type=str)
-    p.add_argument('--debug',type=bool,default=False)
+    p.add_argument('--debug',action='store_true')
     args  = p.parse_args()
     pixel_decorrelation(args.h5filename,debug=args.debug)
