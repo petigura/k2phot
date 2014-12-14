@@ -382,7 +382,6 @@ def get_bin_med_std(dfcad,x):
     fom = np.median(g.std()['x']) 
     return fom
 
-
 if __name__ == "__main__":
     np.set_printoptions(precision=4)
 

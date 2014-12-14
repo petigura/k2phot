@@ -1,22 +1,16 @@
-import os
-import cPickle as pickle
-import sqlite3
 from argparse import ArgumentParser
+import contextlib
 
 import numpy as np
 from numpy import ma
 import pandas as pd
+import matplotlib.pylab as plt
+import h5py
 from sklearn.gaussian_process import GaussianProcess
 from sklearn.decomposition import PCA,FastICA
-from scipy import optimize
-import matplotlib.pylab as plt
 
-from photometry import r2fm
 from ses import ses_stats
-
-import h5py
 import flatfield
-
 
 def lc_to_X(lc,columns):
     """
@@ -47,10 +41,10 @@ class decorlc(object):
         lc['f'] -= 1
 
         self.nugget = (1.6*np.median(np.abs(lc.f)))**2
-        corrlen = 40
+        corrlen = 10
 
         self.time_theta = 1./corrlen
-        self.vmin,self.vmax = np.percentile(lc.f,[10,90])
+        self.vmin,self.vmax = np.percentile(lc.f,[1,99])
         lc['gpmask'] = ~lc.f.between(self.vmin,self.vmax)
 
         self.lc = lc # Save array with out dropped columns
@@ -132,6 +126,86 @@ class decorlc(object):
         self.plot_detrend(columns)
 
 
+class Lightcurve(pd.DataFrame):
+    def set_position_PCs(self):
+        X = lc_to_X(self,'dx dy'.split())
+        pca = PCA(n_components=2)
+        X_r = pca.fit(X).transform(X)
+        X_r = X_r / np.std(X_r,axis=0)
+        for i in [0,1]:
+            self['pos_pc%i' %i ] = X_r[:,i]
+
+    def plot_position_PCs(self):
+        lc = self.lc
+        test = plt.scatter(
+            lc.pos_pc0,lc.pos_pc1,c=lc.f,vmin=self.vmin,vmax=self.vmax,
+            linewidths=0,alpha=0.8,s=20)
+
+        plt.xlabel('pos_pc0')
+        plt.ylabel('pos_pc1')
+        plt.colorbar()
+        return test
+
+
+
+fmad = lambda x : np.median(abs(x))
+fnugget = lambda x : (1.6*fmad(x))**2
+
+def fit_gp_sigma_clip(gp,X,y):
+    binlier = np.ones(X.shape[0]).astype(bool)
+    binlier_last = binlier.copy()
+    colors='rcyrcy'
+    i = 0 
+    while (not np.all(binlier==binlier_last)) or (i==0):
+        print binlier.sum(),i
+        gp.fit(X[binlier,:],y[binlier])
+        y_pred = gp.predict(X)
+        mad = fmad(y - y_pred)
+
+        binlier_last = binlier.copy()
+        binlier = abs(y - y_pred) < 4*mad
+        i+=1
+
+    return gp
+
+def fit_gp_time_and_pos(lc):
+     gpkw = dict(regr='constant',corr='squared_exponential',nugget=fnugget(lc['f']))
+
+    X_t = lc_to_X(lc,'t')
+    X_pos = lc_to_X(lc,['pos_pc0','pos_pc1'])
+    y = np.array(lc['f'])
+
+    gp_t = GaussianProcess(theta0=3,**gpkw)
+
+    thetaU = [1,1]
+    thetaL = [1e-3,1e-3]
+    theta0 = [1e-2,1e-2]
+    gp_pos = GaussianProcess(theta0=theta0,thetaU=thetaU,thetaL=thetaL,**gpkw)
+
+    fdt_pos_last = y.copy()
+    fdt_pos = y.copy()
+
+    i = 0
+    while (not np.all(fdt_pos==fdt_pos_last)) or (i==0):
+        gp_t = fit_gp_sigma_clip(gp_t,X_t,fdt_pos)
+        ftnd_t = gp_t.predict(X_t)
+        fdt_t = y - ftnd_t
+
+        gp_pos = fit_gp_sigma_clip(gp_pos,X_pos,fdt_t)
+        ftnd_pos = gp_xy.predict(X_pos)
+
+        fdt_pos_last = fdt_pos.copy()
+        fdt_pos = y - ftnd_pos
+
+        fdt_t_pos = y - ftnd_t - ftnd_pos
+        gp_t.nugget = gp_pos.nugget = fnugget(fdt_t_pos)
+        
+        i+=1
+
+    return ftnd_pos,ftnd_t
+
+
+
 def plot_detrend(lc,columns):
     """
     Parameters
@@ -160,12 +234,6 @@ def plot_detrend(lc,columns):
     fig.set_tight_layout(True)
     plt.xlabel('Time')
 
-def fmad(x):
-    """
-    Convenience function to compute second moment using L1 norm
-    """
-    return np.median(np.abs(x - np.median(x)))
-
 def get_ses(f):
     ses = ses_stats(f)
     ses.index = ses.name
@@ -183,7 +251,7 @@ def read_weight_file(h5filename):
     dfweights = pd.DataFrame(dL)
     return dfweights
 
-def im_to_dc(im):
+def im_to_lc(im):
     frames = im.get_frames()
     moments = [frame.get_moments() for frame in frames]
     moments = pd.DataFrame(moments)
@@ -192,8 +260,7 @@ def im_to_dc(im):
     lc = pd.merge(lc,flatfield.cadmask,left_on='cad',right_index=True)
     lc['dx'] = lc['m01']
     lc['dy'] = lc['m10']
-    dc = decorlc(lc)
-    return dc
+    return lc
 
 def decorrelate_position_and_time(dc):
     dc.set_position_PCs()
@@ -210,52 +277,40 @@ def decorrelate_position_and_time(dc):
     dc.decorrelate_position_and_time()
     return dc
 
-def pixel_decorrelation(h5filename,debug=True):
-    # Load up DataFrame with 
-    dfdc = read_weight_file(h5filename)
-    if debug:
-        dfdc = dfdc[dfdc.name.str.contains('r=3|r=4')]
+@contextlib.contextmanager
+def FigureManager(basename,suffix=None):
+    # Executes before code block
+    plt.figure() 
+    
+    # Now run the code block
+    yield
 
-    dfdc['dc'] = map(im_to_dc,dfdc.im.tolist())
-    dfdc['ses'] = None
-    for index,sdc in dfdc.iterrows():
-        dc = sdc['dc']
-        dc = decorrelate_position_and_time(dc)
-        fdt = ma.masked_array(dc.lc['fdt_time_xy'],dc.lc['fmask'])
-        sdc['dc'] = dc
-        sdc['ses'] = get_ses(fdt)
-        print "%(name)s, mad_6-cad-mtd = %(ses)i" % sdc
-
-    # Handle plotting
-    basename = h5filename.split('.')[0]
-
-    dfdc = dfdc.convert_objects()
-    sdcmin = dfdc.ix[dfdc['ses'].argmin()]
-    dcmin = sdcmin['dc']
-    pixel_decorrelation_plots(dfdc,dcmin,basename=basename)
-
-def savefig(basename,suffix):
+    # Executes after code block
     if basename is not None:
         plt.savefig(basename+suffix)
 
+# Here's another way of writing the context manager using a class.
+
+#class FigureManager(object):
+#    def __init__(self,basename,suffix=None):
+#        self.basename = basename
+#        self.suffix = suffix
+#    def __enter__(self):
+#        plt.figure()
+#    def __exit__(self, exc_type, exc_val, exc_tb):
+#        if self.basename is not None:
+#            plt.savefig(self.basename+self.suffix)
+
 def pixel_decorrelation_plots(dfdc,dcmin,basename=None):
-    plt.figure()
-    plot_ses_vs_aperture_size(dfdc)
-    suffix = '_0-ses-vs-aperture-size.png'
-    savefig(basename,suffix)
+    with FigureManager(basename,suffix='_0-ses-vs-aperture-size.png'):
+        plot_ses_vs_aperture_size(dfdc)
+        
+    with FigureManager(basename,suffix='_xy.png'):
+        dcmin.plot_position_PCs()
+        dcmin.plot_gp_xy()
 
-    plt.figure()
-    dcmin.plot_position_PCs()
-    dcmin.plot_gp_xy()
-    suffix = '_xy.png'
-    savefig(basename,suffix)
-
-    plt.figure()
-    dcmin.plot_decorrelate_position_and_time()
-    suffix = '_gp_time_xy.png'
-    savefig(basename,suffix)
-
-
+    with FigureManager(basename,suffix='_gp_time_xy.png'):
+        dcmin.plot_decorrelate_position_and_time()
 
 def plot_ses_vs_aperture_size(dfdc):
     dfdc['r'] = dfdc.name.apply(lambda x : x.split('r=')[1][0]).astype(float)
@@ -285,16 +340,7 @@ def plot_ses_vs_aperture_size(dfdc):
     yticks = np.logspace(np.log10(yval[0]), np.log10(yval[1]), 8)
     plt.yticks(yticks, ['%i' % el for el in yticks])
 
-
 def plot_frames():
-
-
-    # Plot with pixel motion and stellar position
-
-    ############
-    # Figure 2 #
-    ############
-
     py.figure(tools.nextfig(), [14, 10])
     fig = py.gcf()
 
@@ -305,7 +351,6 @@ def plot_frames():
 
     # Axes for Time Series
     axL_im = [fig.add_subplot(gs[3:,i]) for i in range(2)]
-
 
     py.sca(axL_ts[0])
     py.plot(time, input.rawFlux, '.-k', mfc='c')
@@ -321,10 +366,6 @@ def plot_frames():
     py.xlabel('BJD - 2454833', )
 
     cat = k2_catalogs.read_cat(return_targets=False)
-
-    #####################################################################
-    # When plotting using imshow, x and y are flipped! Track this down! #
-    #####################################################################
 
     if hasattr(input,'catcut'):
         py.sca(axL_im[0])
@@ -357,9 +398,30 @@ def plot_frames():
     args = args[::-1] # Flip X and Y !
     py.plot(*args,color='r',marker='.')
 
+def pixel_decorrelation(h5filename,debug=True):
+    # Load up DataFrame with 
+    dfdc = read_weight_file(h5filename)
+    if debug:
+        dfdc = dfdc[dfdc.name.str.contains('r=3|r=4')]
 
+    dfdc['dc'] = map(im_to_dc,dfdc.im.tolist())
+    dfdc['ses'] = None
+    for index,sdc in dfdc.iterrows():
+        dc = sdc['dc']
+        dc = decorrelate_position_and_time(dc)
+        fdt = ma.masked_array(dc.lc['fdt_time_xy'],dc.lc['fmask'])
+        sdc['dc'] = dc
+        sdc['ses'] = get_ses(fdt)
+        print "%(name)s, mad_6-cad-mtd = %(ses)i" % sdc
 
+    # Handle plotting
+    basename = h5filename.split('.')[0]
 
+    dfdc = dfdc.convert_objects()
+    sdcmin = dfdc.ix[dfdc['ses'].argmin()]
+    dcmin = sdcmin['dc']
+    pixel_decorrelation_plots(dfdc,dcmin,basename=basename)
+    return dfdc
 
 if __name__ == "__main__":
     p = ArgumentParser(description='Pixel Decorrelation')
