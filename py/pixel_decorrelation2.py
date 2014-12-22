@@ -1,5 +1,6 @@
 from argparse import ArgumentParser
 import contextlib
+import os
 
 import numpy as np
 from numpy import ma
@@ -247,7 +248,7 @@ def decorrelate_position_and_time_1D(lc,verbose=False):
         lc['ftnd_t'] = gp_t.predict( lc.get_X(['t']) )
         lc['fdt_t'] = lc['f'] - lc['ftnd_t']
 
-        lc_segments = np.array_split(lc,6)
+        lc_segments = [lc.ix[idx] for idx in np.array_split(lc.index,6)]
         for lc_seg in lc_segments:
             lc_seg.__class__ = Lightcurve
             lc_seg_gp = Lightcurve(lc_seg[~lc_seg.fmask])
@@ -412,7 +413,10 @@ def pixel_decorrelation(h5filename,debug=True):
         print "%(name)s, mad_6-cad-mtd = %(ses)i" % slc
 
     # Handle plotting
-    basename = h5filename.split('_')[0]
+    basename = os.path.join(
+        os.path.dirname(h5filename),
+        os.path.basename(h5filename).split('_')[0]
+        )
 
     dflc = dflc.convert_objects()
     slcmin = dflc.ix[dflc['ses'].argmin()]
@@ -444,7 +448,6 @@ def pixel_decorrelation(h5filename,debug=True):
     
     outfile = basename+'.h5'
     pd.DataFrame(lcmin).to_hdf(outfile,'lc')
-    import pdb;pdb.set_trace()
     return dflc
         
 if __name__ == "__main__":

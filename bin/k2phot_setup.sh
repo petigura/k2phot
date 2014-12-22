@@ -56,4 +56,4 @@ do
     echo "python ${K2PHOT_DIR}/code/py/pixel_decorrelation2.py --h5file ${OUTPUTDIR}/${STARNAME}.ff.h5 ${OUTPUTDIR}"
     echo "chmod o+rX ${OUTPUTDIR}/${STARNAME}*"
 done > ${SCRIPTSDIR}/k2phot.tot
-rm *.temp
+#rm *.temp

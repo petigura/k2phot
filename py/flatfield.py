@@ -288,12 +288,18 @@ def read_hdf(filename,group,fn=None):
 
     return im
 
-def flatfield_wrap(pixelfile,outdir,starname,tlimits=[-np.inf,np.inf]):
+def flatfield_wrap(pixelfile,outdir,starname,tlimits=[-np.inf,np.inf],
+                   debug=False):
     ff = FlatField(pixelfile,tlimits=tlimits)
-    radii = range(2,8)
-#    radii = range(4,5)
-    moving = [0,1]
-    weighted = [0,1]
+    if debug:
+        radii = range(4,5)
+        moving = [1]
+        weighted = [1]
+    else:
+        radii = range(2,8)
+        moving = [0,1]
+        weighted = [0,1]
+
     ff_pars = list(product(moving,weighted,radii))
     ff_pars = pd.DataFrame(ff_pars,columns='mov weight radius'.split())
     for i in ff_pars.index:
@@ -391,11 +397,12 @@ if __name__ == "__main__":
     p.add_argument('starname',type=str)
     p.add_argument('--tmin',type=float,default=-np.inf)
     p.add_argument('--tmax',type=float,default=np.inf)
+    p.add_argument('--debug',action='store_true')
 
     args  = p.parse_args()
-    pixelfile = args.pixelfile
-    outdir = args.outdir
     tlimits=[args.tmin,args.tmax]
 
-    flatfield_wrap(args.pixelfile,args.outdir,args.starname,tlimits=tlimits)
+    flatfield_wrap(
+        args.pixelfile,args.outdir,args.starname,tlimits=tlimits,
+        debug=args.debug)
 

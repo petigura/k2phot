@@ -13,6 +13,7 @@ import pixel_decorrelation
 import analysis as an
 import tools
 import phot
+import os
 
 import numpy as np
 import pylab as py
@@ -328,18 +329,36 @@ def plotLightCurves(time, flux, inTransit=None, fontsize=16, title='', fig=None,
     return fig, ax
 
 
-def plotDiagnostics_wrap(lcFits, lcPickle, pixFile, candcsv):
-    df = pd.read_csv(candcsv)
-    df = df.dropna(subset=['starname P t0 fit_p'.split()])
-    df['starname'] = df.starname.astype(int).astype(str)
-    df.index = df.starname 
-    cube,headers = pixel_io.loadPixelFile(pixFile)
+def read_ephemeris(candfile,starname):
+    """
+    Read Ephemeris
 
-    starname = '%s' % headers[0]['KEPLERID'] 
-    d = df.ix[starname]
+    Parameters 
+    ----------
+    candfile : file containing ephemeris info
+    """
+ 
+    ext = os.path.splitext(candfile)[1]
+    if ext=='.csv':
+        df = pd.read_csv(candfile)
+        df = df.dropna(subset=['starname P t0 fit_p'.split()])
+        df['starname'] = df.starname.astype(int).astype(str)
+        df.index = df.starname 
+
+
+    d = df.ix[starname,'starname t0 P fit_p fit_tau fit_b'.split()]
     if type(d) is pd.core.frame.DataFrame:
         print "Warning: %i columns, choosing first" % len(d)
         d = d.iloc[0]
+    d = dict(d)
+    return d
+
+
+def plotDiagnostics_wrap(lcFits, lcPickle, pixFile, candcsv):
+    
+    cube,headers = pixel_io.loadPixelFile(pixFile)
+
+    starname = '%s' % headers[0]['KEPLERID'] 
 
     tt, per = 2454833+d['t0'], d['P']
     depth = d['fit_p']**2
@@ -457,31 +476,67 @@ def plotDiagnostics(lcFits, lcPickle, pixFile, transitModel, fontsize=14, medFil
     # Start plotting
     fig = py.figure(tools.nextfig(), [15, 9])
     axs = []
-    fig, ax1 = plotFrame(input, fig=fig, figpos=[0.73, 0.72, 0.25, 0.25], fontsize=fontsize, colorbar=False)
+    fig, ax1 = plotFrame(
+        input, fig=fig, figpos=[0.73, 0.72, 0.25,0.25], fontsize=fontsize, 
+        colorbar=False
+    )
     axs.append(ax1)
 
-    fig, ax2 = plotLightCurves(input.time[index], input.cleanFlux[index], inTransit=inTransit[index], fontsize=fontsize, medFiltWid=medFiltWid, per=per, fig=fig, figpos=[0.02, 0.04, .64, 0.4])
+    fig, ax2 = plotLightCurves(
+        input.time[index], input.cleanFlux[index], inTransit=inTransit[index], 
+        fontsize=fontsize, medFiltWid=medFiltWid, per=per, fig=fig, 
+        figpos=[0.02, 0.04, .64, 0.4]
+    )
     axs.append(ax2)
 
 
-    fig, ax34 = cloudPlot(c1[index], c2[index], dat.cleanFlux[index], inTransit[index], e_cen1=ec1[index], e_cen2=ec2[index], time=time[index], fig=fig, figpos=[0.02, 0.4, 0.35, 0.6], fontsize=fontsize*0.65, medFiltWid=medFiltWid)
+    fig, ax34 = cloudPlot(
+        c1[index], c2[index], dat.cleanFlux[index], inTransit[index], 
+        e_cen1=ec1[index], e_cen2=ec2[index], time=time[index], fig=fig, 
+        figpos=[0.02, 0.4, 0.35, 0.6], fontsize=fontsize*0.65, 
+        medFiltWid=medFiltWid
+    )
+
     axs = axs + list(ax34)
     axs[2].set_title(input.epic)
 
 
     diffImage, e_diffImage, inImage, e_inImage, outImage, e_outImage = \
-        constructDiffImage(time, data, transitModel, per, edata=edata, \
-                               posx=c1, posy=c2, shift='xcshift', \
-                               retall=True, empiricalErrors=False)
-    fig, ax5678, caxs = plotDiffImages(diffImage, e_diffImage, inImage, outImage, apertureMask=input.crudeApertureMask, catcut=input.catcut, epic=input.epic, figpos=[0.37, 0.45, 0.4, 0.5], fig=fig, cmap=py.cm.cubehelix, conCol='r', fontsize=fontsize*0.8, loc=input.loc)
+        constructDiffImage(
+            time, data, transitModel, per, edata=edata, posx=c1, posy=c2, 
+            shift='xcshift', retall=True, empiricalErrors=False
+        )
+
+    fig, ax5678, caxs = plotDiffImages(
+        diffImage, e_diffImage, inImage, outImage, 
+        apertureMask=input.crudeApertureMask, catcut=input.catcut, 
+        epic=input.epic, figpos=[0.37, 0.45, 0.4, 0.5], fig=fig, 
+        cmap=py.cm.cubehelix, conCol='r', fontsize=fontsize*0.8, loc=input.loc
+    )
     axs = axs + ax5678
 
 
-    fig, ax9 = plotPixelTransit(input, data, transitModel, mask=np.ones(data.shape[1:]), figpos=[.73, .45, .25, .25], fig=fig, fontsize=fontsize*0.8)
+    fig, ax9 = plotPixelTransit(
+        input, data, transitModel, mask=np.ones(data.shape[1:]), 
+        figpos=[.73, .45, .25, .25], fig=fig, fontsize=fontsize*0.8
+    )
+
     if np.abs(coffset1/e_coffset1)>3 or np.abs(coffset2/e_coffset2)>3:
-        ax9.plot([mean_out2, mean_out2+coffset2], [mean_out1, mean_out1+coffset1], '.r-')
-        axs[3].text(.5, .9, '%1.1e +/- %1.1e' % (coffset1, e_coffset1), color='b', horizontalalignment='center', fontsize=fontsize*0.8, transform=axs[3].transAxes, weight='bold')
-        axs[3].text(.5, .8, '%1.1e +/- %1.1e' % (coffset2, e_coffset2), color='r', horizontalalignment='center', fontsize=fontsize*0.8, transform=axs[3].transAxes, weight='bold')
+        ax9.plot(
+            [mean_out2, mean_out2+coffset2], 
+            [mean_out1, mean_out1+coffset1], 
+            '.r-')
+
+        axs[3].text(
+            .5, .9, '%1.1e +/- %1.1e' % (coffset1, e_coffset1), color='b', 
+            horizontalalignment='center', fontsize=fontsize*0.8, 
+            transform=axs[3].transAxes, weight='bold')
+
+        axs[3].text(
+            .5, .8, '%1.1e +/- %1.1e' % (coffset2, e_coffset2), color='r', 
+            horizontalalignment='center', fontsize=fontsize*0.8, 
+            transform=axs[3].transAxes, weight='bold'
+        )
     axs.append(ax9)
 
 
@@ -495,10 +550,11 @@ def plotDiagnostics(lcFits, lcPickle, pixFile, transitModel, fontsize=14, medFil
     #prf_diff_text = ['','PRF-fitting D.I.A.', '$\Delta$ ax1 =', '   %1.3f +\- %1.3f pix' % (PRFmotion[0], e_PRFmotion[0]), '$\Delta$ ax2 =', '   %1.3f +\- %1.3f pix' % (PRFmotion[1], e_PRFmotion[1]), '', 'Metric = %1.1f' % pm_metric, '']
     #tools.textfig(prf_diff_text, ax=ax10, fig=fig, fontsize=fontsize*0.8)
 
-    fig, ax1014 = plotDIA_PRF_fit(pixFile, input, diffImage, e_diffImage, outImage, e_outImage, ngrid=30, fontsize=fontsize*0.75, fig=fig, figpos=[0.6, 0, 0.4, 0.45])
+    fig, ax1014 = plotDIA_PRF_fit(
+        pixFile, input, diffImage, e_diffImage, outImage, e_outImage, 
+        ngrid=30, fontsize=fontsize*0.75, fig=fig, figpos=[0.6, 0, 0.4, 0.45])
+
     axs += ax1014
-
-
     return fig, axs
 
 def computeCentroidTransit(time, flux, transitModel, cen1, cen2, ecen1, ecen2, medFiltWid=47, rescaleErrors=True):
