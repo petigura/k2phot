@@ -107,7 +107,7 @@ import k2_catalogs
 from matplotlib.gridspec import GridSpec
 from image_registration import register_images
 from pixel_io import loadPixelFile
-import lightcurve_diagnostics as ld
+#import lightcurve_diagnostics as ld
 
 try:
     import _chi2  # Leverage IJMC's c-based chi-squared routine:

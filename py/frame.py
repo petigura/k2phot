@@ -3,8 +3,9 @@ from numpy import ma
 from skimage import measure
 from photutils import CircularAperture
 import pandas as pd
-from pixel_decorrelation import imshow2
+from pixel_decorrelation import imshow2,get_stars_pix
 import circular_photometry
+from matplotlib import pylab as plt
 class Frame(np.ndarray):
     def __new__(cls, input_array,locx=None,locy=None,r=None,pixels=None,
                 ap_weights=None):
@@ -37,14 +38,13 @@ class Frame(np.ndarray):
                 plt.text(c,r,i,va='center',ha='center',color='Orange')
         apertures.plot(color='Lime',lw=1.5,alpha=0.5)
 
-
-    def nearbystars(fn,epic):
+    def plot_label(self,fn,epic):
         """
         Query the catalog for nearby stars. Pull the WCS from the fits file
         """
-        catcut, shift = get_stars_pix(fn,frame0, dkepmag=dkepmag)
-        epic = headers[0]['KEPLERID']
+        catcut, shift = get_stars_pix(fn,self, dkepmag=5)
         xcen,ycen = catcut.ix[epic]['pix0 pix1'.split()]
+        plot_label(self,catcut,epic,colorbar=True )
 
     def get_moments(self):
         """
@@ -99,9 +99,6 @@ def plot_label(image,catcut,epic,colorbar=True, shift=None, retim=False,
 
     # 2014-09-30 18:33 IJMC: Added shift option.
     # 2014-10-07 20:58 IJMC: Added 'retim' flag and 'cmap' option.
-    im = imshow2(image, cmap=cmap)
-    if colorbar:
-        py.colorbar(orientation='vertical')
 
     targstar = catcut.ix[epic]
     if shift is None:
@@ -110,12 +107,12 @@ def plot_label(image,catcut,epic,colorbar=True, shift=None, retim=False,
         x0,x1 = shift[0:2]
 
     def label_stars(x,**kwargs):
-        py.text(x['pix0'] + x0,x['pix1'] + x1,'%(epic)09d, %(kepmag).1f' % x,**kwargs)
+        plt.text(x['pix0'] + x0,x['pix1'] + x1,'%(epic)09d, %(kepmag).1f' % x,**kwargs)
 
-    py.plot(catcut['pix0']+x0,catcut['pix1']+x1,'oc')
+    plt.plot(catcut['pix0']+x0,catcut['pix1']+x1,'oc')
     catcut.apply(lambda x : label_stars(x,color='c',size='x-small'),axis=1)
 
-    py.plot(targstar['pix0']+x0,targstar['pix1']+x1,'o',color='Tomato')
+    plt.plot(targstar['pix0']+x0,targstar['pix1']+x1,'o',color='Tomato')
     label_stars(targstar,color='Tomato',size='x-small')
 
     if retim:

@@ -164,7 +164,6 @@ def decorrelate_position_and_time(lc,verbose=True):
     lc['f'] /= np.median(lc['f'])
     lc['f'] -= 1
 
-
     lc.set_position_PCs()
 
     X_t = lc_to_X(lc,'t')
@@ -399,8 +398,6 @@ def pixel_decorrelation(h5filename,debug=True):
     dflc['lc'] = map(im_to_lc,dflc.im.tolist())
 
     dflc['ses'] = None
-    dflc['gp_t'] = None
-    dflc['gp_pos'] = None
 
     for index,slc in dflc.iterrows():
         lc = slc['lc']
