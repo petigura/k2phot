@@ -88,7 +88,7 @@ def read_mast_cat(k2_camp):
 
     return cat
 
-def read_cat(k2_camp='C0',return_targets=True):
+def read_cat(k2_camp,return_targets=True):
     """
     Read catalog
 
@@ -124,7 +124,7 @@ def read_diag(k2_camp,nbin=20):
     
     """
     np.random.seed(0)
-    cat = read_cat(k2_camp=k2_camp)
+    cat = read_cat(k2_camp)
 
     dfdiag = []
     kepmagbin = range(10,16)

@@ -109,6 +109,8 @@ from image_registration import register_images
 from pixel_io import loadPixelFile
 #import lightcurve_diagnostics as ld
 
+
+
 try:
     import _chi2  # Leverage IJMC's c-based chi-squared routine:
     c_chisq = True
@@ -3028,7 +3030,6 @@ def get_wcs(f):
     with fits.open(f) as hduL:
         w = wcs.WCS(header=hduL[2].header,key=' ')
     return w 
-cat = k2_catalogs.read_cat(return_targets=False)
 
 def query_stars_in_stamp(pixfn,dkepmag=5):
     """
@@ -3042,6 +3043,7 @@ def query_stars_in_stamp(pixfn,dkepmag=5):
     hduL = fits.open(pixfn)
     ra,dec = hduL[0].header['RA_OBJ'],hduL[0].header['DEC_OBJ']
     epic = hduL[0].header['KEPLERID']
+    cat = k2_catalogs.read_cat('C%i' % hduL[0].header['CAMPAIGN'] )
     
     frame = hduL[1].data['flux'][0]
     pixw = max(frame.shape) / 2
