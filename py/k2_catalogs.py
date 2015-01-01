@@ -24,22 +24,17 @@ import sqlite3
 k2cat_sqlfile = '%(K2PHOTFILES)s/catalogs/k2_catalogs.sqlite' % os.environ
 k2cat_h5file = '%(K2PHOTFILES)s/catalogs/k2_catalogs.h5' % os.environ
 
-def make_cat(k2_camp='C0'):
-    """
-    Make Catalog
-    
-    Reads in EPIC catalog and target lists to create databases for
-    quick access to K2 catalogs.
+K2PHOT_DIR = os.environ['K2PHOT_DIR']
+MAST_CATALOGS = os.path.join(K2PHOT_DIR,'mast_catalogs/')
 
-    Parameters
-    ----------
-    k2_camp : K2 Campaign 
+def read_mast_cat(k2_camp):
     """
-    
+    Read catalogs using the formats specified in the MAST
+    """
+
     if k2_camp=='Ceng':
-        df = pd.read_csv('%s/catalogs/K2_E2_targets_lc.csv' % k2_dir )
+        df = pd.read_csv('%s/catalogs/K2_E2_targets_lc.csv' % MAST_CATALOGS )
         df = df.dropna()
-
         namemap = dict([(c,c.strip()) for c in df.columns])
         df = df.rename(columns=namemap)
         df = df.rename(columns={
@@ -49,44 +44,49 @@ def make_cat(k2_camp='C0'):
         ra.wrap_angle=180*u.deg
         df['ra'] = ra.deg
 
-    elif k2_camp=='C0':
+    else:
+        if k2_camp=='C0':
+            targetsfn = 'K2Campaign0targets.csv'
+            readmefn = 'README_d14108_01_epic_c0_dmc'
+            catalogfn = 'd14108_01_epic_c0_dmc.mrg' 
+        elif k2_camp=='C1':
+            targetsfn = 'K2Campaign1targets.csv'
+            readmefn = 'README_epic_field1_dmc'
+            catalogfn = 'd1435_02_epic_field1_dmc.mrg' 
+        
+        targetsfn = os.path.join(K2PHOT_DIR,'target_lists/',targetsfn)
+        readmefn = os.path.join(MAST_CATALOGS,readmefn)
+        catalogfn = os.path.join(MAST_CATALOGS,catalogfn)
+        
         # Read in the column descriptors
-        df = pd.read_table('%s/catalogs/README_d14108_01_epic_c0_dmc' % k2_dir,
-                           header=None,names=['line'])
-        df = df[df.line.str.contains('^#\d{1}')==True]
-        df['col'] = df.line.apply(lambda x : x.split()[0][1:]).astype(int)
-        df['name'] = df.line.apply(lambda x : x.split()[1])
+        readme = pd.read_table(readmefn ,header=None, names=['line'])
+        readme = readme[readme.line.str.contains('^#\d{1}')==True]
+        readme['col'] = readme.line.apply(
+            lambda x : x.split()[0][1:]).astype(int)
+        readme['name'] = readme.line.apply(lambda x : x.split()[1])
         
         # List of columns to include
         namemap = {'ID':'epic','RA':'ra','DEC':'dec','Kp':'kepmag'}
 
         # Read in the actual calatog
-        df.index=df.name
-        cut = df.ix[namemap.keys()]
+        readme.index = readme.name
+        cut = readme.ix[namemap.keys()]
         cut['newname'] = namemap.values()
         cut = cut.sort('col')
         usecols = cut.col-1
-        df = pd.read_table('%s/catalogs/d14108_01_epic_c0_dmc.mrg' % k2_dir,
-                           sep='|',names=cut.newname,header=None,
-                           usecols=usecols)
 
-        df.index = df.epic
+        cat = pd.read_table(
+            catalogfn, sep='|', names=cut.newname, header=None, usecols=usecols
+            )
 
-        
-        targetsfn = '%(K2PHOT_DIR)s/target_lists/K2Campaign0targets.csv' % os.environ 
-        
         targets = pd.read_csv(targetsfn,usecols=[0])
         targets = targets.rename(columns={'EPIC ID':'epic'})
-        df['target'] = False
-        df.ix[targets.epic,'target'] = True
+        targets['target'] = True
+        cat = pd.merge(cat, targets, how='left', on='epic')
+        cat['target'] = cat.target==True
+        cat.index = cat.epic
 
-    
-    print "Dumping whole catalog to %s, %s" % (k2cat_h5file,k2_camp)
-    df.to_hdf(k2cat_h5file,k2_camp)
-
-    print "Dumping convenience database to %s, %s" % (k2cat_sqlfile,k2_camp)
-    con = sqlite3.connect(k2cat_sqlfile)
-    df[df.target].to_sql(k2_camp,con,if_exists='replace',index=False)
+    return cat
 
 
 def read_cat(k2_camp='C0',return_targets=True):
