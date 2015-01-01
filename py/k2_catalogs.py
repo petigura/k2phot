@@ -88,7 +88,6 @@ def read_mast_cat(k2_camp):
 
     return cat
 
-
 def read_cat(k2_camp='C0',return_targets=True):
     """
     Read catalog
