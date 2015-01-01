@@ -392,43 +392,25 @@ def plot_frames():
     args = args[::-1] # Flip X and Y !
     py.plot(*args,color='r',marker='.')
 
-def pixel_decorrelation(h5filename,debug=True):
-    # Load up DataFrame with 
-    dflc = read_weight_file(h5filename,debug=debug)
-    dflc['lc'] = map(im_to_lc,dflc.im.tolist())
-
-    dflc['ses'] = None
-
-    for index,slc in dflc.iterrows():
-        lc = slc['lc']
-        lc = decorrelate_position_and_time_1D(lc)
-
-        fdt = ma.masked_array(lc['fdt_pos'],lc['fmask'])
-        fdt = fdt / ma.median(fdt) - 1
-        slc['lc'] = lc
-        slc['ses'] = get_ses(fdt)
-        print "%(name)s, mad_6-cad-mtd = %(ses)i" % slc
-
+def plot_pixel_decorrelation(lcFile):
+    dflc = read_dflc(lcFile)
+    lcmin = dflc.ix[dflc['ses'].idxmin(),'lc']
+    
     # Handle plotting
     basename = os.path.join(
-        os.path.dirname(h5filename),
-        os.path.basename(h5filename).split('_')[0]
+        os.path.dirname(lcFile),
+        os.path.basename(lcFile).split('.')[0]
         )
-
-    dflc = dflc.convert_objects()
-    slcmin = dflc.ix[dflc['ses'].argmin()]
-    lcmin = slcmin['lc']
-
 
     with FigureManager(basename,suffix='_0-ses-vs-aperture-size.png'):
         plot_ses_vs_aperture_size(dflc)
 
     with FigureManager(basename,suffix='_pos_pc0.png'):
-        fdt_t = ma.masked_array(lc['fdt_t'],lc['fmask'])
-        plt.plot(lc['pos_pc0'],fdt_t,'.')
-        plt.plot(lc['pos_pc0'],lc['ftnd_pos'],'.')
+        fdt_t = ma.masked_array(lcmin['fdt_t'],lcmin['fmask'])
+        plt.plot(lcmin['pos_pc0'],fdt_t,'.')
+        plt.plot(lcmin['pos_pc0'],lcmin['ftnd_pos'],'.')
 
-        desc = lc.ftnd_pos.describe()
+        desc = lcmin.ftnd_pos.describe()
         spread = desc['max'] - desc['min']
         plt.ylim( desc['min'] - spread, desc['max'] + spread )
         plt.gcf().set_tight_layout(True)
@@ -442,14 +424,53 @@ def pixel_decorrelation(h5filename,debug=True):
         spread = desc['max'] - desc['min']
         plt.ylim( desc['min'] - spread, desc['max'] + spread )
         plt.gcf().set_tight_layout(True)
-    
-    outfile = basename+'.h5'
-    pd.DataFrame(lcmin).to_hdf(outfile,'lc')
-    return dflc
+
+def read_dflc(path):
+    with h5py.File(path) as h5:
+        groupnames = [item[0] for item in h5.items()]
+
+    if np.any(np.array([n.count('mov') for n in groupnames]) > 0):
+        groupnames = [n for n in groupnames if n.count('mov') > 0]
         
+    dflc = []
+    for gname in groupnames:
+        s = pd.read_hdf(path,'%s/header' % gname) 
+        s['lc'] = pd.read_hdf(path,'%s/lc' % gname)
+        dflc += [s]
+
+    dflc = pd.DataFrame(dflc)
+    return dflc
+
+def pixel_decorrelation(weightFile,debug=True):
+    # Load up DataFrame with 
+    dflc = read_weight_file(weightFile,debug=debug)
+    dflc['lc'] = map(im_to_lc,dflc.im.tolist())
+    dflc['ses'] = None
+
+    basename = os.path.join(
+        os.path.dirname(weightFile),
+        os.path.basename(weightFile).split('_')[0]
+    )
+
+    lcFile = basename+'.h5'
+    for index,slc in dflc.iterrows():
+        lc = slc['lc']
+        lc = decorrelate_position_and_time_1D(lc)
+        fdt = ma.masked_array(lc['fdt_pos'],lc['fmask'])
+        fdt = fdt / ma.median(fdt) - 1
+        slc['lc'] = lc
+        slc['ses'] = get_ses(fdt)
+
+        slcsave = slc['name ses'.split()]
+        slcsave.to_hdf(lcFile,'%(name)s/header' % slcsave )
+        slc['lc'].to_hdf(lcFile,'%(name)s/lc' % slcsave)
+        print "%(name)s, mad_6-cad-mtd = %(ses)i" % slc
+
+    plot_pixel_decorrelation(lcFile)
+
 if __name__ == "__main__":
     p = ArgumentParser(description='Pixel Decorrelation')
-    p.add_argument('h5filename',type=str)
+    p.add_argument('weightFile',type=str)
     p.add_argument('--debug',action='store_true')
     args  = p.parse_args()
-    pixel_decorrelation(args.h5filename,debug=args.debug)
+    pixel_decorrelation(args.weightFile,debug=args.debug)

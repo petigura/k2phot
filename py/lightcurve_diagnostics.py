@@ -28,6 +28,7 @@ import pixel_io
 from pixel_decorrelation import imshow2,get_stars_pix,getArcLengths
 import flatfield
 import photometry    
+import pixel_decorrelation2
 
 def computeCentroids(data, edata, mask):
     """Compute centroid time series.
@@ -398,6 +399,16 @@ def read_ephemeris(candfile,starname):
         namemap={'fit_b':'b','fit_p':'p','fit_tau':'tau'}
         df = df.rename(columns=namemap)
 
+    if ext=='.db':
+        import sqlite3
+        con = sqlite3.connect(candfile)
+        query = """
+SELECT starname,P,t0,fit_p,fit_b,fit_tau,s2n 
+FROM candidate 
+GROUP BY starname
+HAVING id=max(id)"""
+        df = pd.read_sql(query,con)
+
     d = df.ix[starname,'starname t0 P p tau b'.split()]
     if type(d) is pd.core.frame.DataFrame:
         print "Warning: %i columns, choosing first" % len(d)
@@ -533,8 +544,12 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname,
 
  
     # Hack! Use the aperture that was actually used to compute the photometry
+
+    dflc = pixel_decorrelation2.read_dflc(path)
+    lcgroupname = dflc.ix[dflc['ses'].idxmin(),'name']
+
     im = flatfield.read_hdf(
-        lcFile.replace('.h5','_weights.h5'),'mov=0_weight=0_r=6'
+        lcFile.replace('.h5','_weights.h5'),lcgroupname
     )    
 
     ap_mask = (im.ap_weights[0]) > 0
@@ -650,9 +665,10 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname,
 
 
     
-    fig, ax1014 = plotDIA_PRF_fit(
-        pixFile, diffImage, e_diffImage, outImage, e_outImage, loc, ap_mask,
-        ngrid=30, fontsize=fontsize*0.75, fig=fig, figpos=[0.6, 0, 0.4, 0.45])
+#    fig, ax1014 = plotDIA_PRF_fit(
+#        pixFile, diffImage, e_diffImage, outImage, e_outImage, loc, ap_mask,
+#        ngrid=30, fontsize=fontsize*0.75, fig=fig, figpos=[0.6, 0, 0.4, 0.45])
+
 
     axs += ax1014
 
@@ -1423,10 +1439,8 @@ def plotPixelTransit(time, c1, c2, data, transitModel, ap_mask, catcut, epic,  *
     else:
         fig = py.figure()
 
-
     # Compute pixel-correlation image:
-
-    gammas, egammas = computePixelTransit(time, c1, c2, data, transitModel, ap_mask)
+    gammas, egammas = computePixelTransit(time, c1, c2, data, transitModel)
 
     # Set up for plotting:
     x0, y0, dx, dy = figpos
@@ -1439,7 +1453,8 @@ def plotPixelTransit(time, c1, c2, data, transitModel, ap_mask, catcut, epic,  *
     hilim = fGamma[ap_mask * np.isfinite(fGamma)].max()
 
     ax = fig.add_subplot(111, position=pos1)
-    im = pixel_decorrelation.plot_label(fGamma, catcut, epic, retim=True, colorbar=False)
+    im = pixel_decorrelation.plot_label(
+        fGamma, catcut, epic, retim=True, colorbar=False)
 
     cax = fig.add_subplot(221, position=pos1c)
     cb = py.colorbar(im, cax=cax) #, format='%1.1e')

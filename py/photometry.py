@@ -363,7 +363,7 @@ def read_photometry_crossfield(path,k2_camp='C0'):
 dfmaskpath = os.path.join(os.environ['K2PHOTFILES'],'C0_fmask_theta.h5')
 dfmask = pd.read_hdf(dfmaskpath,'dfmask')
 
-def read_photometry(path):
+def read_photometry(path,mode='minses'):
     """
     Read photometry
     
@@ -372,6 +372,19 @@ def read_photometry(path):
     path : path to photometry
     """
 
+    def condition_pixel_decorrelation2(lc):
+        lc = pd.merge(
+            lc0_C0['cad t'.split()],
+            lc.drop('t',axis=1),on='cad',how='left')
+
+        lc['fmask'] = lc['fmask']!=False
+        lc['f_not_normalized'] = lc['fdt_t_pos']
+        lc['f'] = lc['fdt_t_pos']
+        lc['f'] /= median(lc['f'])
+        lc['f'] -= 1
+    import pdb;pdb.set_trace()
+
+
     print "reading in %s" %path
     if (path.count('.pickle') + path.count('.fits')) > 0:
         lc = read_photometry_crossfield(path)
@@ -379,18 +392,24 @@ def read_photometry(path):
         with h5py.File(path) as h5:
             groupnames = [item[0] for item in h5.items()]
 
+
+        if np.any(np.array([n.count('mov') for n in groupnames]) > 0):
+
+            groupnames = [n for n in groupnames if n.count('mov') > 0]
+            if mode=='minses':
+                header = [
+                    pd.read_hdf(path,'%s/header' % gname) 
+                    for gname in groupnames
+                ]
+                header = pd.DataFrame(header)
+                print header
+                namemin = header.ix[header['ses'].idxmin(),'name']
+                lc = pd.read_hdf(path,'%s/lc' % namemin)
+            
+
         if groupnames.count('lc')==1:
             lc = pd.read_hdf(path,'lc')
-            lc = pd.merge(
-                lc0_C0['cad t'.split()],
-                lc.drop('t',axis=1),on='cad',how='left')
-
-            lc['fmask'] = lc['fmask']!=False
-
-            lc['f_not_normalized'] = lc['fdt_t_pos']
-            lc['f'] = lc['fdt_t_pos']
-            lc['f'] /= median(lc['f'])
-            lc['f'] -= 1
+            lc = condition_pixel_decorrelation2(lc)
 
         elif groupnames.count('lc0')==1:
             lc = pd.read_hdf(path,'lc0')
