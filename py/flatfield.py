@@ -20,17 +20,17 @@ from pixel_decorrelation import get_star_pos, loadPixelFile, get_stars_pix, \
 from imagestack import ImageStack
 
 
-def add_cadmask(lc,k2_camp):
-    """
-    Add Cadence Mask
-    """
-    
-    if k2_camp=='C0':
-        cadmaskfile = os.path.join(os.environ['K2PHOTFILES'],'C0_fmask.csv')
-        cadmask = pd.read_csv(cadmaskfile,index_col=0)
-        lc = pd.merge(lc,flatfield.cadmask,left_on='cad',right_index=True)
-    elif k2_camp=='C1':
-
+#def add_cadmask(lc,k2_camp):
+#    """
+#    Add Cadence Mask
+#    """
+#    
+#    if k2_camp=='C0':
+#        cadmaskfile = os.path.join(os.environ['K2PHOTFILES'],'C0_fmask.csv')
+#        cadmask = pd.read_csv(cadmaskfile,index_col=0)
+#        lc = pd.merge(lc,flatfield.cadmask,left_on='cad',right_index=True)
+#    elif k2_camp=='C1':
+#
 
 class FlatField(ImageStack):
     """
@@ -370,7 +370,7 @@ def get_dfcad(cad, n_cad_per_bin=50):
     """
 
     dcad = cad[1:] - cad[:-1]
-    assert np.max(dcad) < 10,'Long gap in cadences, binning no longer accurate'
+#    assert np.max(dcad) < 10,'Long gap in cadences, binning no longer accurate'
 
     cad = pd.DataFrame(dict(cad=cad))
     cad['cadbin'] = -1
