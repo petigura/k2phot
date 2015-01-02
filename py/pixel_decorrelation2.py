@@ -126,7 +126,10 @@ def read_weight_file(h5filename,debug=False):
 def im_to_lc(im):
     frames = im.get_frames()
     moments = [frame.get_moments() for frame in frames]
-    moments = pd.DataFrame(moments)
+    moments = pd.DataFrame(
+        moments,columns='m10 m01 mupr20 mupr02 mupr11'.split()
+        )
+
     lc = pd.concat([im.ts,moments],axis=1)
 
     # Add the thurster fire mask

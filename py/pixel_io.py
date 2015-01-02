@@ -3,6 +3,8 @@ import numpy as np
 from numpy import ma
 import tools
 
+bjd0 = 2454833
+
 def loadPixelFile(fn, tlimits=None, bjd0=2454833):
     """
     Convert a Kepler Pixel-data file into time, flux, and error on flux.

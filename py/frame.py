@@ -66,15 +66,22 @@ class Frame(np.ndarray):
 
         # Compute the centroid
         m = measure.moments(frame)
-        moments = pd.Series(dict(m10=m[0,1],m01=m[1,0]))
+        m10=m[1,0]
+        m01=m[0,1]
+        moments = np.array([m10,m01])
         moments /= m[0,0]
 
         # Compute central moments (second order)
-        mu = measure.moments_central(frame,moments['m10'],moments['m01'])
-        c_moments = pd.Series(
-            dict(mupr20=mu[2,0], mupr02=mu[0,2], mupr11=mu[1,1]) )
+        mu = measure.moments_central(frame,moments[0],moments[1])
+        
+        mupr20 = mu[2,0]
+        mupr02 = mu[0,2]
+        mupr11 = mu[1,1]
+
+        c_moments = np.array([mupr20,mupr02,mupr11])
         c_moments/=mu[0,0]
-        moments = pd.concat([moments,c_moments])
+
+        moments = np.hstack([moments,c_moments])
         return moments
 
 def test_frame_moments():
@@ -87,7 +94,7 @@ def test_frame_moments():
     frame = Frame(flux,locx=locx,locy=locy,r=radius,ap_weights=ap_weights)
     moments = frame.get_moments()
 
-    firstmoments = moments['m01 m10'.split()]
+    firstmoments = moments[[0,1]]
     assert np.allclose(firstmoments,positions),\
         'Centroid must match center of aperture'
 

@@ -98,7 +98,10 @@ class FlatField(ImageStack):
         frame0 = ma.median(frame0,axis=0)
         frame0.fill_value = 0
         frame0 = frame0.filled()
-        catcut, shift = get_stars_pix(self.fn,frame0)
+        catcut, shift = get_stars_pix(
+            self.fn,frame0,verbose=True,refine_wcs=False
+            )
+
         epic = self.headers[0]['KEPLERID']
         xcen,ycen = catcut.ix[epic]['pix0 pix1'.split()]
         print "Using position mode %s, star is at pixels = [%.2f,%.2f]" % \
@@ -320,8 +323,8 @@ def flatfield_wrap(pixelfile,outdir,starname,tlimits=[-np.inf,np.inf],
         weighted = [1]
     else:
         radii = range(2,8)
-        moving = [0,1]
-        weighted = [0,1]
+        moving = [0]
+        weighted = [0]
 
     ff_pars = list(product(moving,weighted,radii))
     ff_pars = pd.DataFrame(ff_pars,columns='mov weight radius'.split())
