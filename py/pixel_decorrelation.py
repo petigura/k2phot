@@ -1237,7 +1237,6 @@ def getCentroidsStandard(stack, mask=None, bg=None, strictlim=True):
     if bg is None:
         bg = np.zeros(stack.shape[0])
 
-    
     stack -= bg.reshape(nobs, 1, 1)
 
     x1d, y1d = np.arange(stack.shape[2]), np.arange(stack.shape[1])
@@ -1954,9 +1953,6 @@ def lsqDecorHelperBin(flux, t_norm, s_norm, y_norm, goodvals, nord_s, nord_y, tn
 
 
     return baseline, sff, rms1#, rms2
-
-
-
 
 
 def plot_label(image,catcut,epic,colorbar=True, shift=None, retim=False, cmap=None):
@@ -3058,11 +3054,17 @@ def query_stars_in_stamp(pixfn,dkepmag=5):
     catcut = catcut.copy() 
     return catcut
 
-def get_stars_pix(pixfn,frame, retsynframe=False, ids='all', prfpath=None,dkepmag=5, verbose=False):
+def get_stars_pix(pixfn,frame, retsynframe=False, ids='all', prfpath=None,dkepmag=5, verbose=False, refine_wcs=False):
     """
-    Get stars position 
+    Get Stars Position
 
-    Query the catalog for stars near the target. Generate a synthetic
+    Query the catalog for stars near the target. For the initial
+    release of C0, the WCS was offset from the true location of the
+    star and we needed to refine the WCS solution by registering to a
+    synthetic image (turn on refine_wcs). This registration can
+    fail as in the case of C1-201609326. 
+
+    Generate a synthetic
     image of stars and then register those stars to the image.
 
     Parameters
@@ -3073,7 +3075,10 @@ def get_stars_pix(pixfn,frame, retsynframe=False, ids='all', prfpath=None,dkepma
     ids : which KIC/EPIC values to include
     prfpath : filename of PRF file, or None
     dkepmag : grab stars upto dkepmag fainter than target
-    
+    refine_wcs : Set to true if we want to refine the WCS solution
+                    by registering with a synthetic image
+
+
     Return
     ------
     catcut : DataFrame with stars position in pixel coordinates
@@ -3090,57 +3095,62 @@ def get_stars_pix(pixfn,frame, retsynframe=False, ids='all', prfpath=None,dkepma
     pix = w.wcs_world2pix(catcut['ra'],catcut['dec'],0)
     catcut['pix0'],catcut['pix1'] = pix
 
-    # Generate a synthetic image
-    # x and y fliped to account for python imshow convention
-    y,x = np.mgrid[0:frame.shape[0],0:frame.shape[1]]
-    synframe = np.zeros(frame.shape)
-    synframe_special = np.zeros(frame.shape)
-    catcut['A'] = catcut['kepmag'] - np.min(catcut['kepmag'])
-    catcut['A'] = 10**(-0.4 * catcut.A)
+    if refine_wcs:
+        # Generate a synthetic image
+        # x and y fliped to account for python imshow convention
+        y,x = np.mgrid[0:frame.shape[0],0:frame.shape[1]]
+        synframe = np.zeros(frame.shape)
+        synframe_special = np.zeros(frame.shape)
+        catcut['A'] = catcut['kepmag'] - np.min(catcut['kepmag'])
+        catcut['A'] = 10**(-0.4 * catcut.A)
 
-    if ids=='all':
-        index = catcut.index
-    else:
-        index = ids
-
-    if prfpath is not None:
-        prf, sampling = loadPRF(file=pixfn)
-        prf = an.pad(prf, frame.shape[0]*sampling, frame.shape[1]*sampling)
-        peakloc = (prf==prf.max()).nonzero()
-
-    for i in catcut.index:
-        d = catcut.ix[i]
-        g = gaussian(d['pix0'],d['pix1'],0.5)
-        if prfpath is not None:
-            prfmod = ld.shiftImages(d['A'] * prf, d['pix0']*sampling-peakloc[0], d['pix1']*sampling-peakloc[1]).squeeze()
-            thisstar = an.binarray(prfmod, sampling)
+        if ids=='all':
+            index = catcut.index
         else:
-            thisstar = d['A']*g(x,y)
-        synframe += thisstar
-        if i in index:
-            synframe_special += thisstar
+            index = ids
 
-    scalefactor = frame.sum() / synframe.sum()
-    synframe = synframe_special * scalefactor
-    #synframe *= scalefactor
+        if prfpath is not None:
+            prf, sampling = loadPRF(file=pixfn)
+            prf = an.pad(prf, frame.shape[0]*sampling, frame.shape[1]*sampling)
+            peakloc = (prf==prf.max()).nonzero()
+
+        for i in catcut.index:
+            d = catcut.ix[i]
+            g = gaussian(d['pix0'],d['pix1'],0.5)
+            if prfpath is not None:
+                prfmod = ld.shiftImages(d['A'] * prf, d['pix0']*sampling-peakloc[0], d['pix1']*sampling-peakloc[1]).squeeze()
+                thisstar = an.binarray(prfmod, sampling)
+            else:
+                thisstar = d['A']*g(x,y)
+            synframe += thisstar
+            if i in index:
+                synframe_special += thisstar
+
+        scalefactor = frame.sum() / synframe.sum()
+        synframe = synframe_special * scalefactor
+        #synframe *= scalefactor
 
 
-    # Determine the shift between reference and synthetic images
-    shift = register_images(frame, synframe, usfac=100.)
-    shift = np.array(shift)
+        # Determine the shift between reference and synthetic images
+        shift = register_images(frame, synframe, usfac=100.)
+        shift = np.array(shift)
 
-    if verbose: 
-        print "stars shifted by %s pixels from header WCS" % str(shift)
-    catcut['pix0']-=shift[0]
-    catcut['pix1']-=shift[1]
+        if verbose: 
+            print "stars shifted by %s pixels from header WCS" % str(shift)
+        catcut['pix0']-=shift[0]
+        catcut['pix1']-=shift[1]
 
-    epic = fits.open(pixfn)[0].header['KEPLERID']
-    xcen,ycen = catcut.ix[epic]['pix0 pix1'.split()]
-    #print xcen,ycen
+        epic = fits.open(pixfn)[0].header['KEPLERID']
+        xcen,ycen = catcut.ix[epic]['pix0 pix1'.split()]
+        #print xcen,ycen
+
+    else:
+        shift = np.array([0.,0.])
 
     ret = catcut, shift
     if retsynframe:
         ret += (synframe,)
+
     return ret
 
 
