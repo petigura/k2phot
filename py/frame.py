@@ -37,6 +37,8 @@ class Frame(np.ndarray):
                 r,c = pos
                 plt.text(c,r,i,va='center',ha='center',color='Orange')
         apertures.plot(color='Lime',lw=1.5,alpha=0.5)
+        plt.xlabel('Column (pixels)')
+        plt.ylabel('Row (pixels)')
 
     def plot_label(self,fn,epic):
         """

@@ -3,7 +3,7 @@ from pixel_decorrelation import loadPixelFile
 import pandas as pd
 import numpy as np
 from frame import Frame
-
+from numpy import ma
 class ImageStack(object):
     def __init__(self,fn,tlimits=None):
         cube,headers = loadPixelFile(fn,tlimits=tlimits)
@@ -59,6 +59,15 @@ class ImageStack(object):
         ap_weights = self.ap_weights[i]
         frame = Frame(
             flux[i],locx=locx,locy=locy,r=self.radius,ap_weights=ap_weights)
+        return frame
+
+    def get_medframe(self):
+        locx,locy =tuple(self.ts['locx locy'.split()].median())
+        flux = self.get_flux()
+        flux = ma.masked_invalid(flux)
+        flux = ma.median(flux,axis=0)
+        frame = Frame(
+            flux,locx=locx,locy=locy,r=self.radius)
         return frame
 
     def get_frames(self):

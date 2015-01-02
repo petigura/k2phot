@@ -31,6 +31,32 @@ def lc_to_X(lc,columns):
         X = X.reshape(-1,1)
     return X
 
+segments = """\
+k2_camp start stop
+C1 91440 92096
+C1 92099 92672
+C1 92677 93270
+C1 93426 94182
+C1 94188 94892
+C1 94894 95348
+"""
+
+from cStringIO import StringIO as sio
+segments = pd.read_table(sio(segments),sep='\s*')
+
+def plotseg():
+    for i in segments.iterrows():
+        plt.axvspan(i[1]['start'],i[1]['stop'])
+
+def split_lc(lc):
+    seg = segments.copy()
+    camp_seg = seg#[seg.k2_camp==k2_camp]
+    lc_segments = []
+    for i,row in camp_seg.iterrows():
+        lc_seg = lc.query('%(start)i <= cad <= %(stop)i' % row)
+        lc_segments +=[lc_seg]
+    return lc_segments
+
 def plot_position_PCs(lc):
     test = plt.scatter(
         lc.pos_pc0,lc.pos_pc1,c=lc.f,linewidths=0,alpha=0.8,s=20)
@@ -71,6 +97,8 @@ class Lightcurve(pd.DataFrame):
             lc2 = self[~self[maskcol]]
             return lc_to_X(lc2,col)
 
+from pixel_io import bjd0
+
 def plot_detrend(lc,columns):
     """
     Parameters
@@ -94,13 +122,17 @@ def plot_detrend(lc,columns):
     plt.sca(axL[0])
     plt.plot(t,f,label='Flux SES = %i' % fses)
     plt.plot(t,ftnd,label='Fit')
+    plt.ylabel('Flux')
+
     plt.legend(**legkw)
 
     plt.sca(axL[1])
     plt.plot(t,fdt,label='Residuals SES = %i' % fdtses)
     plt.legend(**legkw)
+    plt.xlabel('BJD - %i' % bjd0 )
+    plt.ylabel('Flux')
     fig.set_tight_layout(True)
-    plt.xlabel('Time')
+
 
 def get_ses(f):
     ses = ses_stats(f)
@@ -115,7 +147,7 @@ def read_weight_file(h5filename,debug=False):
     dfweights = pd.DataFrame(groupnames,columns=['name'])
     if debug:
         dfweights = dfweights[dfweights.name.str.contains('r=3|r=4') &
-                              dfweights.name.str.contains('mov=1_weight=1')]
+                              dfweights.name.str.contains('mov=0_weight=0')]
 
     dfweights['im'] = ''
     for index,sweights in dfweights.iterrows():
@@ -232,7 +264,8 @@ def decorrelate_position_and_time_1D(lc,verbose=False):
     lc.set_position_PCs()
 
     gpkw = dict(
-        regr='constant',corr='squared_exponential',nugget=fnugget(lc['f']))
+        regr='constant',corr='squared_exponential',nugget=fnugget(lc['f'])
+        )
 
     gp_t = GaussianProcess(theta0=3,**gpkw)
     gp_pos = GaussianProcess(theta0=0.03,thetaL=0.01,thetaU=0.1,**gpkw)
@@ -255,18 +288,18 @@ def decorrelate_position_and_time_1D(lc,verbose=False):
 
         lc['ftnd_t'] = gp_t.predict( lc.get_X(['t']) )
         lc['fdt_t'] = lc['f'] - lc['ftnd_t']
-
-        lc_segments = [lc.ix[idx] for idx in np.array_split(lc.index,6)]
+        lc_segments = split_lc(lc)
         for lc_seg in lc_segments:
+            
             lc_seg.__class__ = Lightcurve
             lc_seg_gp = Lightcurve(lc_seg[~lc_seg.fmask])
 
             gp_pos = fit_gp_sigma_clip(
                 gp_pos, lc_seg_gp.get_X(['pos_pc0']), 
                 np.array(lc_seg_gp['fdt_t']),
-                verbose=verbose)
+                verbose=verbose
+                )
 
-#            gp_pos.fit(X_pos,lc_seg['fdt_t'])
             lc_seg['ftnd_pos'] = gp_pos.predict(lc_seg.get_X(['pos_pc0']))
 
         lc = pd.concat(lc_segments)
@@ -314,7 +347,6 @@ def FigureManager(basename,suffix=None):
 #            plt.savefig(self.basename+self.suffix)
 
 
-
 def plot_ses_vs_aperture_size(dflc):
     dflc['r'] = dflc.name.apply(lambda x : x.split('r=')[1][0]).astype(float)
     dflc['method'] = dflc.name.apply(lambda x : x.split('r=')[0][:-1])
@@ -332,8 +364,8 @@ def plot_ses_vs_aperture_size(dflc):
     xlab = 'Target Aperture Radius [pixels]'
     txtStr = 'Minimum: %(ses).1f ppm at R=%(r).1f pixels' % slcmin
 
-    plt.xlabel(xlab, )
-    plt.ylabel('RMS c[ppm]', )
+    plt.xlabel(xlab)
+    plt.ylabel('RMS [ppm]', )
     plt.minorticks_on()
 
     desc = dflc.ses.describe()
@@ -343,91 +375,52 @@ def plot_ses_vs_aperture_size(dflc):
     yticks = np.logspace(np.log10(yval[0]), np.log10(yval[1]), 8)
     plt.yticks(yticks, ['%i' % el for el in yticks])
 
-def plot_frames():
-    py.figure(tools.nextfig(), [14, 10])
-    fig = py.gcf()
-
-    gs = GridSpec(6,2)
-    # Axes for Time Series
-    axL_ts = [fig.add_subplot(gs[i,:]) for i in range(3)]
-    [py.setp(ax.get_xticklabels(), visible=False) for ax in axL_ts[1:]]
-
-    # Axes for Time Series
-    axL_im = [fig.add_subplot(gs[3:,i]) for i in range(2)]
-
-    py.sca(axL_ts[0])
-    py.plot(time, input.rawFlux, '.-k', mfc='c')
-    py.ylabel('Raw Flux')
-
-    py.sca(axL_ts[1])
-    py.plot(time, input.x, '.-k', mfc='r')
-    py.ylabel('X motion [pix]', )
-
-    py.sca(axL_ts[2])
-    py.plot(time, input.y, '.-k', mfc='r')
-    py.ylabel('Y motion [pix]', )
-    py.xlabel('BJD - 2454833', )
-
-    cat = k2_catalogs.read_cat(return_targets=False)
-
-    if hasattr(input,'catcut'):
-        py.sca(axL_im[0])
-        plot_label(input.medianFrame,input.catcut,input.epic, shift=shift)
-        py.title("Median Frame")
-        py.sca(axL_im[1])    
-        logframe = np.log10(input.medianFrame)
-        logframe = ma.masked_invalid(logframe)
-        logframe.fill_value=0
-        logframe = logframe.filled()
-        plot_label(logframe,input.catcut,input.epic, shift=shift)
-        py.title("log10(Median Frame)")
-        
-
-    for i in range(2):
-        py.sca(axL_im[i])
-        py.contour(input.crudeApertureMask, [0.5], colors='g', linewidths=2.5)
-    #if input.apertureMode[0:4]=='circ':
-    #    xy = list(input.loc)[::-1] # FLIP x and y
-    #    args =  [xy[0]+shift[0], xy[1]+shift[1], input.apertures[0]]
-    #    for i in range(2):
-    #        py.sca(axL_im[i])
-    #        tools.drawCircle(*args,color='lime', fill=False, linewidth=3)
-
-
-    py.gcf().text(.5, .95, titstr, fontsize='large', ha='center')
-    ax = py.axis()
-
-    args = [input.x,input.y]
-    args = args[::-1] # Flip X and Y !
-    py.plot(*args,color='r',marker='.')
-
 def plot_pixel_decorrelation(lcFile):
     dflc = read_dflc(lcFile)
     lcmin = dflc.ix[dflc['ses'].idxmin(),'lc']
-    
+    im = dflc.ix[dflc['ses'].idxmin(),'im']
+
     # Handle plotting
     basename = os.path.join(
         os.path.dirname(lcFile),
         os.path.basename(lcFile).split('.')[0]
         )
 
-    with FigureManager(basename,suffix='_0-ses-vs-aperture-size.png'):
+
+#    with FigureManager(basename,suffix='_0-median-frame.png'):
+#        fr = ff.get_medframe()
+#        fn = ff.fn
+#        epic = fits.open(fn)[0].header['KEPLERID']
+#        fr.plot()
+#        fr.plot_label(fn,epic)
+
+
+    with FigureManager(basename,suffix='_1-ses-vs-aperture-size.png'):
         plot_ses_vs_aperture_size(dflc)
 
-    with FigureManager(basename,suffix='_pos_pc0.png'):
+    with FigureManager(basename,suffix='_2-pos_pc0.png'):
         fdt_t = ma.masked_array(lcmin['fdt_t'],lcmin['fmask'])
-        plt.plot(lcmin['pos_pc0'],fdt_t,'.')
-        plt.plot(lcmin['pos_pc0'],lcmin['ftnd_pos'],'.')
+        plt.plot(lcmin['pos_pc0'],fdt_t,'.',
+            label='Flux (High-pass Filtered)'
+            )
 
+        plt.plot(
+            lcmin['pos_pc0'],lcmin['ftnd_pos'],'.',
+            label='Flux Dependence\nagainst Principle Component 0'
+            )
+
+        plt.legend(loc='best')
+        plt.xlabel('Principle Component 0 [pixels]')
+        plt.ylabel('Flux')
         desc = lcmin.ftnd_pos.describe()
         spread = desc['max'] - desc['min']
         plt.ylim( desc['min'] - spread, desc['max'] + spread )
         plt.gcf().set_tight_layout(True)
 
-    with FigureManager(basename,suffix='_gp_t_pos.png'):
+    with FigureManager(basename,suffix='_3-gp_t_pos.png'):
         plot_detrend(lcmin,'f ftnd_t_pos fdt_t_pos'.split())
 
-    with FigureManager(basename,suffix='_gp_t_pos_zoom.png'):
+    with FigureManager(basename,suffix='_4-gp_t_pos_zoom.png'):
         plot_detrend(lcmin,'f ftnd_t_pos fdt_t_pos'.split())
         desc = lcmin.ftnd_t_pos.describe()
         spread = desc['max'] - desc['min']
@@ -459,7 +452,7 @@ def pixel_decorrelation(weightFile,debug=True):
     basename = os.path.join(
         os.path.dirname(weightFile),
         os.path.basename(weightFile).split('_')[0]
-    )
+        )
 
     lcFile = basename+'.h5'
     for index,slc in dflc.iterrows():

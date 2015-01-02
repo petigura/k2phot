@@ -10,7 +10,7 @@ from numpy import ma
 from scipy import optimize
 import pandas as pd
 from astropy.io import fits
-
+import matplotlib.pylab as plt
 from photutils.aperture_core import _sanitize_pixel_positions
 from pdplus import LittleEndian as LE
 
@@ -351,6 +351,20 @@ def flatfield_wrap(pixelfile,outdir,starname,tlimits=[-np.inf,np.inf],
         groupname = weights_groupname(ff_par)
         h5filename = os.path.join(outdir,'%s_weights.h5' % starname)
         ff.to_hdf(h5filename,groupname)
+
+
+    fr = ff.get_medframe()
+    fn = ff.fn
+    epic = fits.open(fn)[0].header['KEPLERID']
+    fr.plot()
+    fr.plot_label(fn,epic)
+
+    figpath = '%s/%s_0-median-frame.png' %( outdir,starname)
+    fig = plt.gcf()
+    plt.title('%s Median Frame\nLast Aperture Used' % starname)
+    fig.savefig(figpath)
+
+
 
 def test_restore():
     from matplotlib.pylab import *
