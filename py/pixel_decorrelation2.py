@@ -9,6 +9,8 @@ import matplotlib.pylab as plt
 import h5py
 from sklearn.gaussian_process import GaussianProcess
 from sklearn.decomposition import PCA,FastICA
+from astropy.io import fits
+
 
 from ses import ses_stats
 import flatfield
@@ -126,8 +128,12 @@ def im_to_lc(im):
     moments = [frame.get_moments() for frame in frames]
     moments = pd.DataFrame(moments)
     lc = pd.concat([im.ts,moments],axis=1)
+
+    # Add the thurster fire mask
+    k2_camp = 'C%i' % fits.open(im.fn)[0].header['CAMPAIGN']
+    lc = flatfield.add_cadmask(lc,k2_camp)
+
     lc['f'] = im.get_sap_flux()
-    lc = pd.merge(lc,flatfield.cadmask,left_on='cad',right_index=True)
     lc['dx'] = lc['m01']
     lc['dy'] = lc['m10']
     return lc
