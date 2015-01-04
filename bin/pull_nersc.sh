@@ -18,7 +18,7 @@ case ${TYPE} in
 	FILES=$( 
 	    echo ${STARS} | starname_to_pixfile.sh ${CAMP}
 	)
-	rsync -avh --progress --files-from=<( echo ${FILES} | tr " "  "\n " ) dtn01:${REMOTEDIR}/${RUN}/ ${LOCALDIR}/${RUN}/
+	rsync -avhz --progress --files-from=<( echo ${FILES} | tr " "  "\n " ) dtn01:${REMOTEDIR}/${RUN}/ ${LOCALDIR}/${RUN}/
 
 	;;
     photometry*)
