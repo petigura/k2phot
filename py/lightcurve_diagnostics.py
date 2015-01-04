@@ -24,7 +24,7 @@ from astropy.io import fits as pyfits
 from matplotlib import pylab as plt
 import pandas as pd
 import pixel_io
-
+from pixel_io import bjd0
 from pixel_decorrelation import imshow2,get_stars_pix,getArcLengths
 import flatfield
 import photometry    
@@ -380,7 +380,8 @@ def plotLightCurves(time, flux, inTransit=None, fontsize=16, title='', fig=None,
     ax.minorticks_on()
     return fig, ax
 
-
+import sqlite3
+        
 def read_ephemeris(candfile,starname):
     """
     Read Ephemeris
@@ -400,7 +401,6 @@ def read_ephemeris(candfile,starname):
         df = df.rename(columns=namemap)
 
     if ext=='.db':
-        import sqlite3
         con = sqlite3.connect(candfile)
         query = """
 SELECT starname,P,t0,fit_p,fit_b,fit_tau,s2n 
@@ -408,6 +408,9 @@ FROM candidate
 GROUP BY starname
 HAVING id=max(id)"""
         df = pd.read_sql(query,con)
+        namemap={'fit_b':'b','fit_p':'p','fit_tau':'tau'}
+        df = df.rename(columns=namemap)
+        df.index = df.starname 
 
     d = df.ix[starname,'starname t0 P p tau b'.split()]
     if type(d) is pd.core.frame.DataFrame:
@@ -433,7 +436,7 @@ def boxTransitModel(t,tpars):
             - tau : Rstar / v 
             - b : impact parameter
     """
-    t0 = 2454833 + tpars['t0']
+    t0 = tpars['t0']
     P = tpars['P']
     tau = tpars['tau']
     b = tpars['b']
@@ -448,6 +451,7 @@ def boxTransitModel(t,tpars):
     inTransit = np.abs((t-t0 + P/2.) % P - P/2) < (t14/2.)
     fTransitModel = 1. - inTransit*depth
     return fTransitModel
+
 
 def plotDiagnostics( pixFile, lcFile, candfile, starname,
                      fontsize=14, medFiltWid=47, tt=None, per=None, t14=None,
@@ -507,9 +511,14 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname,
 
     """
     # 2014-10-03 13:29 IJMC: Created
-
-
     # Load & massage data files:
+
+    print "\n"*2
+    print "Runnig Lightcurve Diagnostics"
+    print "-"*80
+    for f in 'pixFile lcFile candfile starname'.split():
+        print "%s: %s" % (f,eval(f))
+
     lc = photometry.read_photometry(lcFile)
 
 #    dat = pyfits.getdata(lcFits)
@@ -522,13 +531,13 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname,
     tlimits[0] -= 1e-6
     tlimits[1] += 1e-6
 
+
     cube, headers = pixel_io.loadPixelFile(pixFile, tlimits=tlimits)
 
-    time = cube['time']
+    time = cube['time'] - bjd0
     data = cube['flux']
     edata = cube['flux_err']
     cad = cube['CADENCENO']
-
 
     data, edata = pixel_decorrelation.preconditionDataCubes(
         data, edata, medSubData=True)
@@ -544,12 +553,12 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname,
 
  
     # Hack! Use the aperture that was actually used to compute the photometry
-
-    dflc = pixel_decorrelation2.read_dflc(path)
-    lcgroupname = dflc.ix[dflc['ses'].idxmin(),'name']
+#    dflc = pixel_decorrelation2.read_dflc(path)
+#    lcgroupname = dflc.ix[dflc['ses'].idxmin(),'name']
+    lcgroupname = 'mov=0_weight=0_r=3'
 
     im = flatfield.read_hdf(
-        lcFile.replace('.h5','_weights.h5'),lcgroupname
+        lcFile.replace('.h5','_weights.h5'), lcgroupname, fn=pixFile
     )    
 
     ap_mask = (im.ap_weights[0]) > 0
@@ -558,13 +567,14 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname,
 
     # Build up a DataFrame with entries corresponding to each frame in
     # the `data` array
+    
+    lcCube = np.rec.fromarrays(
+        [time, cad, c1, c2, ec1, ec2, transitModel, inTransit],
+        names='time, cad, c1, c2, ec1, ec2, transitModel, inTransit'
+        )
 
-    lcCube = pd.DataFrame( np.vstack([time,cad]).T,columns=['time','cad'])
+    lcCube = pd.DataFrame( lcCube )
     lcCube = pd.merge(lcCube,pd.DataFrame(lc)['cad fmask f fdt_t_pos'.split()])
-
-    for k in 'c1 c2 ec1 ec2 transitModel inTransit'.split():
-        exec("lcCube['%s'] = %s" % (k,k) )
-
     lcCube = lcCube.to_records(index=False)
     lcCubeClean = lcCube[~lcCube.fmask]
 
@@ -640,7 +650,7 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname,
     dataClean = data[~lcCube['fmask']]
     fig, ax9 = plotPixelTransit(
         lcCubeClean['time'], lcCubeClean['c1'], lcCubeClean['c2'], dataClean,
-        lcCubeClean['transitModel'], ap_mask, catcut, int(starname), 
+        lcCubeClean['transitModel'], catcut, int(starname), 
         mask=np.ones(dataClean.shape[1:]), figpos=[.73, .45, .25, .25], 
         fig=fig, fontsize=fontsize*0.8
     )
@@ -670,7 +680,7 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname,
 #        ngrid=30, fontsize=fontsize*0.75, fig=fig, figpos=[0.6, 0, 0.4, 0.45])
 
 
-    axs += ax1014
+#    axs += ax1014
 
 
     return fig, axs
@@ -760,7 +770,7 @@ def computeCentroidTransit(time, flux, transitModel, cen1, cen2, ecen1, ecen2, m
 
     return shift_distance, e_shift_distance, gamma1, egamma1, gamma2, egamma2, ell_1, ell_2, 
 
-def computePixelTransit(time, c1, c2, data, transitModel, ap_mask, medFiltWid=47, rescaleErrors=True, mask=None):
+def computePixelTransit(time, c1, c2, data, transitModel, medFiltWid=47, rescaleErrors=True, mask=None):
     """Apply pixel-flux vs. transit tests; Sec. 4 of Bryson et al. 2013.
 
     :INPUTS:
@@ -805,8 +815,9 @@ def computePixelTransit(time, c1, c2, data, transitModel, ap_mask, medFiltWid=47
     nobs, nrow, ncol = data.shape
     gammas = np.zeros((nrow, ncol), dtype=float)
     egammas = np.zeros((nrow, ncol), dtype=float)
+
     if mask is None:
-        mask = ap_mask
+        mask = np.ones((nrow,ncol)).astype(bool)
 
     # S. Bryson says that we do *not* pre-whiten or normalize the transit model
     filtTransitModel = transitModel - 1. 
@@ -1402,7 +1413,7 @@ def fitPRF2Image(image, e_image, pixfn, loc, targApDiam, ngrid=40, reterr=False,
 
     return ret
 
-def plotPixelTransit(time, c1, c2, data, transitModel, ap_mask, catcut, epic,  **kwargs):
+def plotPixelTransit(time, c1, c2, data, transitModel, catcut, epic,  **kwargs):
 
     """
     Plot results of pixel-flux vs. transit tests (from :func:`computePixelTransit)
@@ -1440,7 +1451,7 @@ def plotPixelTransit(time, c1, c2, data, transitModel, ap_mask, catcut, epic,  *
         fig = py.figure()
 
     # Compute pixel-correlation image:
-    gammas, egammas = computePixelTransit(time, c1, c2, data, transitModel)
+    gammas, egammas = computePixelTransit(time, c1, c2, data, transitModel )
 
     # Set up for plotting:
     x0, y0, dx, dy = figpos
@@ -1449,8 +1460,8 @@ def plotPixelTransit(time, c1, c2, data, transitModel, ap_mask, catcut, epic,  *
 
     #fGamma = signal.medfilt2d(gammas, medfilt)
     fGamma = gammas / egammas
-    lolim = fGamma[ap_mask * np.isfinite(fGamma)].min()
-    hilim = fGamma[ap_mask * np.isfinite(fGamma)].max()
+    lolim = fGamma[np.isfinite(fGamma)].min()
+    hilim = fGamma[np.isfinite(fGamma)].max()
 
     ax = fig.add_subplot(111, position=pos1)
     im = pixel_decorrelation.plot_label(
@@ -1460,8 +1471,8 @@ def plotPixelTransit(time, c1, c2, data, transitModel, ap_mask, catcut, epic,  *
     cb = py.colorbar(im, cax=cax) #, format='%1.1e')
 
     #cb = py.colorbar(im, ax=ax)
-    im.set_clim([0, hilim])
-    ax.contour(ap_mask, [0.5], linewidths=2, colors='g')
+    im.set_clim([lolim, hilim])
+    #ax.contour(ap_mask, [0.5], linewidths=2, colors='g')
     
     all_tick_labels = ax.get_xticklabels() + ax.get_yticklabels() + \
         cax.get_xticklabels() + cax.get_yticklabels()

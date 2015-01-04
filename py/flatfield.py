@@ -21,18 +21,11 @@ from imagestack import ImageStack
 
 K2PHOTFILES = os.environ['K2PHOTFILES']
 
-def add_cadmask(lc,k2_camp):
-    """
-    Add Cadence Mask
-
-    Reads in the corresponding mask file for each quarter and adds fmask
-    """
-    
+def get_cadmask(k2_camp):
     if k2_camp=='C0':
         cadmaskfile = 'C0_fmask.csv'
     if k2_camp=='C1':
         cadmaskfile = 'C1_fmask.csv'
-
     cadmaskfile = os.path.join(K2PHOTFILES,cadmaskfile)
 
     if k2_camp=='C0':
@@ -40,7 +33,16 @@ def add_cadmask(lc,k2_camp):
     if k2_camp=='C1':
         cadmask = pd.read_csv(cadmaskfile,index_col=0)
         cadmask.index=cadmask.cad
+    return cadmask
+        
 
+def add_cadmask(lc,k2_camp):
+    """
+    Add Cadence Mask
+
+    Reads in the corresponding mask file for each quarter and adds fmask
+    """
+    cadmask = get_cadmask(k2_camp)
     lc = pd.merge(lc,cadmask,left_on='cad',right_index=True)        
     return lc
 
@@ -298,7 +300,10 @@ def read_hdf(filename,group,fn=None):
     header = pd.read_hdf(filename,'%s/header' % group)
     ts = pd.read_hdf(filename,'%s/ts' % group)
 
-    ff = FlatField(header['fn'],tlimits=header['tlimits'])
+    if fn==None:
+        fn = header['fn']
+
+    ff = FlatField(fn,tlimits=header['tlimits'])
 
     ff.weights = weights['weight']
     ff.pixels = np.array(weights['row col'.split()])

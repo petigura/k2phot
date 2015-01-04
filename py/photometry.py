@@ -20,6 +20,9 @@ import h5py
 import k2_catalogs
 import glob
 from pdplus import LittleEndian as LE
+import cPickle as pickle
+from pixel_decorrelation import baseObject
+from pixel_io import bjd0 
 
 def scrape_headers(fL):
     df =[]
@@ -255,10 +258,11 @@ def r2fm(r,field):
     return ma.masked_array(r[field],r['fmask'])
 
 
-cat = k2_catalogs.read_cat()
-cat['epic'] = cat.epic.astype(str)
 
 def phot_vs_kepmag(df0,plot_diag=False):
+    cat = k2_catalogs.read_cat()
+    cat['epic'] = cat.epic.astype(str)
+
     df = df0.copy()
     
     df = pd.merge(
@@ -318,8 +322,6 @@ def read_crossfield(epic):
     return read_crossfield_fits(path[0])
 
 
-import cPickle as pickle
-from pixel_decorrelation import baseObject
 
 keys = 'cad cleanFlux noThrusterFiring'.split()
 def read_photometry_crossfield(path,k2_camp='C0'):
@@ -372,26 +374,42 @@ def read_photometry(path,mode='minses'):
     path : path to photometry
     """
 
-    def condition_pixel_decorrelation2(lc):
+    def fixtimes(lc):
         lc = pd.merge(
             lc0_C0['cad t'.split()],
-            lc.drop('t',axis=1),on='cad',how='left')
-
+            lc.drop('t',axis=1),on='cad',how='left'
+            )
+        return lc
+        
+    def condition_pixel_decorrelation2(lc):
         lc['fmask'] = lc['fmask']!=False
         lc['f_not_normalized'] = lc['fdt_t_pos']
         lc['f'] = lc['fdt_t_pos']
         lc['f'] /= median(lc['f'])
         lc['f'] -= 1
-    import pdb;pdb.set_trace()
 
+        # Fill in missing cadences with nans
+        cad_start = lc.iloc[0]['cad']
+        cad_stop = lc.iloc[-1]['cad']
+        t_start = lc.iloc[0]['t']
+
+        longcadence = 58.89 * 30. / 60. /60. / 24
+
+        cad = np.arange(cad_start, cad_stop+1)
+        t =  (cad - cad_start) * longcadence + t_start
+        times = pd.DataFrame(np.rec.fromarrays([cad,t],names='cad,t'))
+        lc = pd.merge(times,lc.drop(['t'],axis=1),how='left',on='cad')
+        lc['fmask'] = lc['fmask']!=False        
+        lc['t'] -= bjd0
+        return lc
 
     print "reading in %s" %path
     if (path.count('.pickle') + path.count('.fits')) > 0:
         lc = read_photometry_crossfield(path)
+
     if path.count('.h5') > 0:
         with h5py.File(path) as h5:
             groupnames = [item[0] for item in h5.items()]
-
 
         if np.any(np.array([n.count('mov') for n in groupnames]) > 0):
 
@@ -405,10 +423,11 @@ def read_photometry(path,mode='minses'):
                 print header
                 namemin = header.ix[header['ses'].idxmin(),'name']
                 lc = pd.read_hdf(path,'%s/lc' % namemin)
-            
-
+                lc = condition_pixel_decorrelation2(lc)
+        
         if groupnames.count('lc')==1:
             lc = pd.read_hdf(path,'lc')
+            lc = fixtimes(lc)
             lc = condition_pixel_decorrelation2(lc)
 
         elif groupnames.count('lc0')==1:
