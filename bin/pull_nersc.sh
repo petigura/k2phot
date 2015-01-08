@@ -21,7 +21,7 @@ case ${TYPE} in
 	rsync -avhz --progress --files-from=<( echo ${FILES} | tr " "  "\n " ) dtn01:${REMOTEDIR}/${RUN}/ ${LOCALDIR}/${RUN}/
 
 	;;
-    photometry*)
+    photometry|TPS)
 	OUTPUT=${LOCALDIR}/${RUN}/output/
 	mkdir -p ${OUTPUT}
 	echo ${STARS}
@@ -36,10 +36,7 @@ case ${TYPE} in
 	;;
 
     TPS*)
+	
 	;;
 esac
 
-
-
-
-#echo ${FILES}
