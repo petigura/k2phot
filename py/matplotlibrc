@@ -31,7 +31,7 @@
 #backend      : WXAgg
 #backend      : Agg
 #backend      : TkAgg
-backend      : MacOSX
+#backend      : MacOSX
 #backend      : Agg
 #backend      : GTKAgg
 #backend      : GTK

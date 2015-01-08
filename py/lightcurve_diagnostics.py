@@ -29,6 +29,7 @@ from pixel_decorrelation import imshow2,get_stars_pix,getArcLengths
 import flatfield
 import photometry    
 import pixel_decorrelation2
+from pdplus import LittleEndian as LE
 
 def computeCentroids(data, edata, mask):
     """Compute centroid time series.
@@ -412,7 +413,7 @@ HAVING id=max(id)"""
         df = df.rename(columns=namemap)
         df.index = df.starname 
 
-    d = df.ix[starname,'starname t0 P p tau b'.split()]
+    d = df.ix[starname,'starname t0 P p tau b s2n'.split()]
     if type(d) is pd.core.frame.DataFrame:
         print "Warning: %i columns, choosing first" % len(d)
         d = d.iloc[0]
@@ -453,7 +454,7 @@ def boxTransitModel(t,tpars):
     return fTransitModel
 
 
-def plotDiagnostics( pixFile, lcFile, candfile, starname,
+def plotDiagnostics( pixFile, lcFile, candfile, starname, s2n=-1,
                      fontsize=14, medFiltWid=47, tt=None, per=None, t14=None,
                      empiricalErrors=False):
     """
@@ -545,6 +546,12 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname,
 
     # Read in transit parameters from file.
     tpars = read_ephemeris(candfile,starname)
+    if s2n > 0:
+        if tpars['s2n'] < s2n:
+            print "s2n=%f lower than threshold=%f" %(tpars['s2n'],s2n )
+            print "exting"
+            return None
+
     transitModel = boxTransitModel(time,tpars)
 
     nobs = time.size
@@ -572,8 +579,9 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname,
         [time, cad, c1, c2, ec1, ec2, transitModel, inTransit],
         names='time, cad, c1, c2, ec1, ec2, transitModel, inTransit'
         )
-
-    lcCube = pd.DataFrame( lcCube )
+    
+    lcCube = pd.DataFrame(LE(lcCube))
+    
     lcCube = pd.merge(lcCube,pd.DataFrame(lc)['cad fmask f fdt_t_pos'.split()])
     lcCube = lcCube.to_records(index=False)
     lcCubeClean = lcCube[~lcCube.fmask]
@@ -1566,11 +1574,14 @@ if __name__=='__main__':
     p.add_argument('lcFile',type=str)
     p.add_argument('candfile',type=str)
     p.add_argument('starname',type=str)
+    p.add_argument('--s2n',type=float,default=-1)
     args = p.parse_args()
 
-    fig,axs = plotDiagnostics(
-        args.pixFile, args.lcFile, args.candfile, args.starname
+    
+    fig,axL = plotDiagnostics(
+        args.pixFile, args.lcFile, args.candfile, args.starname, s2n=args.s2n
     )
+
 
     dirname = os.path.dirname(args.lcFile)
     pathpdf = os.path.join(dirname,"%s_dv.pdf" % args.starname)

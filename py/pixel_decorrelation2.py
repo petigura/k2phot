@@ -378,7 +378,7 @@ def plot_ses_vs_aperture_size(dflc):
 def plot_pixel_decorrelation(lcFile):
     dflc = read_dflc(lcFile)
     lcmin = dflc.ix[dflc['ses'].idxmin(),'lc']
-    im = dflc.ix[dflc['ses'].idxmin(),'im']
+#    im = dflc.ix[dflc['ses'].idxmin(),'im']
 
     # Handle plotting
     basename = os.path.join(

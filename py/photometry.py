@@ -304,14 +304,6 @@ def Ceng2C0(lc0):
     return lcC0
 
 
-ts,_,_,_,_,_ = read_k2_fits(
-    '%(K2_DIR)s/pixel/C0/ktwo200000818-c00_lpd-targ.fits' % os.environ)
-ts = LE(ts)
-
-namemap={'TIME':'t','CADENCENO':'cad'}
-keys = namemap.values() + ['QUALITY']
-lc0_C0 = pd.DataFrame(ts).rename(columns=namemap)[keys]
-
 def read_crossfield(epic):
     pathstar = 'photometry/Ceng_pixdecor2/%i_loc*.fits' % epic
     path = glob.glob(pathstar)
@@ -365,6 +357,26 @@ def read_photometry_crossfield(path,k2_camp='C0'):
 dfmaskpath = os.path.join(os.environ['K2PHOTFILES'],'C0_fmask_theta.h5')
 dfmask = pd.read_hdf(dfmaskpath,'dfmask')
 
+from subprocess import Popen,PIPE
+
+
+
+def load_lc0(k2_camp):
+    if k2_camp=='C0':
+        lc0 = 'pixel/C0/ktwo200000818-c00_lpd-targ.fits'
+    if k2_camp=='C1':
+        lc0 = 'pixel/C1/ktwo201367065-c01_lpd-targ.fits'
+
+
+    K2_ARCHIVE=os.environ['K2_ARCHIVE']
+    lc0 = os.path.join(K2_ARCHIVE,lc0)
+    ts, _, _, _, _, _ = read_k2_fits(lc0)
+    ts = LE(ts)
+    namemap={'TIME':'t','CADENCENO':'cad'}
+    keys = namemap.values() + ['QUALITY']
+    lc0 = pd.DataFrame(ts).rename(columns=namemap)[keys]
+    return lc0
+
 def read_photometry(path,mode='minses'):
     """
     Read photometry
@@ -373,13 +385,6 @@ def read_photometry(path,mode='minses'):
     ----------
     path : path to photometry
     """
-
-    def fixtimes(lc):
-        lc = pd.merge(
-            lc0_C0['cad t'.split()],
-            lc.drop('t',axis=1),on='cad',how='left'
-            )
-        return lc
         
     def condition_pixel_decorrelation2(lc):
         lc['fmask'] = lc['fmask']!=False
@@ -389,18 +394,36 @@ def read_photometry(path,mode='minses'):
         lc['f'] -= 1
 
         # Fill in missing cadences with nans
+        # Super cludgy way of extracting the path campaign 
+        f = lambda x : os.path.split(x)[0]
+        k2_camp = os.path.basename(f(f(f(path)))).split('_')[0]
+
+        lc0 = load_lc0(k2_camp)
+        
+        lc = pd.merge(
+            lc0['cad t'.split()],
+            lc.drop('t',axis=1),on='cad',how='left'
+            )
+
         cad_start = lc.iloc[0]['cad']
         cad_stop = lc.iloc[-1]['cad']
         t_start = lc.iloc[0]['t']
 
-        longcadence = 58.89 * 30. / 60. /60. / 24
+        tbase = lc.iloc[-1]['t'] -  lc.iloc[0]['t']
+        dt = tbase / len (lc)
 
-        cad = np.arange(cad_start, cad_stop+1)
-        t =  (cad - cad_start) * longcadence + t_start
-        times = pd.DataFrame(np.rec.fromarrays([cad,t],names='cad,t'))
-        lc = pd.merge(times,lc.drop(['t'],axis=1),how='left',on='cad')
+        idxnull = lc[lc['t'].isnull()].index
+        lc.ix[idxnull,'t'] = t_start + (lc.ix[idxnull,'cad'] - cad_start)*dt
+
+#        longcadence = 58.89 * 30. / 60. /60. / 24
+#
+#        cad = np.arange(cad_start, cad_stop+1)
+#        t =  (cad - cad_start) * longcadence + t_start
+#        times = pd.DataFrame(np.rec.fromarrays([cad,t],names='cad,t'))
+#        lc = pd.merge(times,lc.drop(['t'],axis=1),how='left',on='cad')
         lc['fmask'] = lc['fmask']!=False        
-        lc['t'] -= bjd0
+
+#        lc['t'] -= bjd0
         return lc
 
     print "reading in %s" %path
@@ -427,7 +450,6 @@ def read_photometry(path,mode='minses'):
         
         if groupnames.count('lc')==1:
             lc = pd.read_hdf(path,'lc')
-            lc = fixtimes(lc)
             lc = condition_pixel_decorrelation2(lc)
 
         elif groupnames.count('lc0')==1:
@@ -442,5 +464,9 @@ def read_photometry(path,mode='minses'):
             lc['fmask'] = lc['pmask']
 
         lc = np.array(lc.to_records(index=False))
+
+    assert np.isnan(lc['cad']).sum()==0,"Can't have null cadences "
+    assert np.isnan(lc['t']).sum()==0,"Can't have null times "
+
     print "lc.size " + str(lc.size)
     return lc
