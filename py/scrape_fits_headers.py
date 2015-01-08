@@ -21,7 +21,7 @@ def scrape_headers_to_db(fitsfile,dbfile):
         with con:
             cur = con.cursor()
             cur.execute(schema)            
-
+        con.close() 
     with fits.open(fitsfile) as hduL:
         cols_h0 = 'KEPLERID OBJECT CHANNEL MODULE OUTPUT CAMPAIGN'.split() 
         cols_h1 = 'NAXIS NAXIS1 NAXIS2 TDIM4 1CRV4P 2CRV4P'.split()       
@@ -50,6 +50,7 @@ def scrape_headers_to_db(fitsfile,dbfile):
     with con:
         cur = con.cursor()
         cur.execute(query,outd)            
+    con.close() 
 
 if __name__=="__main__":
     p = ArgumentParser(description="Scrape info from fits headers")
@@ -59,6 +60,10 @@ if __name__=="__main__":
     args  = p.parse_args()
     
     for i,fitsfile in enumerate(args.fitsfile):
-        scrape_headers_to_db(fitsfile,args.dbfile)
+        try:
+            scrape_headers_to_db(fitsfile,args.dbfile)
+        except:
+            pass
+
         if i%10==0:
             print i
