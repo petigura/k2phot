@@ -1,7 +1,5 @@
 """
 Module for performing photometry of K2 data.
-
-
 """
 import os
 
@@ -23,6 +21,8 @@ from pdplus import LittleEndian as LE
 import cPickle as pickle
 from pixel_decorrelation import baseObject
 from pixel_io import bjd0 
+
+
 
 def scrape_headers(fL):
     df =[]
@@ -377,6 +377,43 @@ def load_lc0(k2_camp):
     lc0 = pd.DataFrame(ts).rename(columns=namemap)[keys]
     return lc0
 
+ 
+K2PHOTFILES = os.environ['K2PHOTFILES']
+
+def get_cadmask(k2_camp):
+    if k2_camp=='C0':
+        cadmaskfile = 'C0_fmask.csv'
+    if k2_camp=='C1':
+        cadmaskfile = 'C1_fmask.csv'
+    cadmaskfile = os.path.join(K2PHOTFILES,cadmaskfile)
+
+    if k2_camp=='C0':
+        cadmask = pd.read_csv(cadmaskfile,index_col=0)
+    if k2_camp=='C1':
+        cadmask = pd.read_csv(cadmaskfile,index_col=0)
+        cadmask.index=cadmask.cad
+        cadmask = cadmask.drop(['cad'],axis=1)
+    return cadmask
+        
+def add_cadmask(lc,k2_camp):
+    """
+    Add Cadence Mask
+
+    Reads in the corresponding mask file for each quarter and adds fmask
+    """
+    cadmask = get_cadmask(k2_camp)
+    if list(lc.columns).count('fmask')==0:
+        lc = pd.merge(lc,cadmask,left_on='cad',right_index=True)        
+    else:
+        lc = pd.merge(lc,cadmask,left_on='cad',right_index=True) 
+        keys = 'fmask_x fmask_y'.split()
+        for k in keys:
+            lc[k] = lc[k]!=False
+        lc['fmask'] = lc[keys].sum(axis=1) > 0
+        lc = lc.drop(keys,axis=1)
+
+    return lc
+
 def read_photometry(path,mode='minses'):
     """
     Read photometry
@@ -387,19 +424,22 @@ def read_photometry(path,mode='minses'):
     """
         
     def condition_pixel_decorrelation2(lc):
+        # Fill in missing cadences with nans
+        # Super cludgy way of extracting the path campaign 
+        f = lambda x : os.path.split(x)[0]
+        k2_camp = os.path.basename(f(f(f(path)))).split('_')[0]
+
+
+
+
         lc['fmask'] = lc['fmask']!=False
         lc['f_not_normalized'] = lc['fdt_t_pos']
         lc['f'] = lc['fdt_t_pos']
         lc['f'] /= median(lc['f'])
         lc['f'] -= 1
 
-        # Fill in missing cadences with nans
-        # Super cludgy way of extracting the path campaign 
-        f = lambda x : os.path.split(x)[0]
-        k2_camp = os.path.basename(f(f(f(path)))).split('_')[0]
-
         lc0 = load_lc0(k2_camp)
-        
+
         lc = pd.merge(
             lc0['cad t'.split()],
             lc.drop('t',axis=1),on='cad',how='left'
@@ -419,6 +459,7 @@ def read_photometry(path,mode='minses'):
         return lc
 
     def condition_pixel_decorrelation4(lc):
+
         lc['fmask'] = lc['fmask']!=False
         lc['f_not_normalized'] = lc['fdt_t_roll_2D']
         lc['f'] = lc['fdt_t_roll_2D']
@@ -429,7 +470,9 @@ def read_photometry(path,mode='minses'):
         # Super cludgy way of extracting the path campaign 
         f = lambda x : os.path.split(x)[0]
         k2_camp = os.path.basename(f(f(f(path)))).split('_')[0]
-
+        
+        
+        lc = add_cadmask(lc,k2_camp)
         lc0 = load_lc0(k2_camp)
         
         lc = pd.merge(
