@@ -415,16 +415,41 @@ def read_photometry(path,mode='minses'):
         idxnull = lc[lc['t'].isnull()].index
         lc.ix[idxnull,'t'] = t_start + (lc.ix[idxnull,'cad'] - cad_start)*dt
 
-#        longcadence = 58.89 * 30. / 60. /60. / 24
-#
-#        cad = np.arange(cad_start, cad_stop+1)
-#        t =  (cad - cad_start) * longcadence + t_start
-#        times = pd.DataFrame(np.rec.fromarrays([cad,t],names='cad,t'))
-#        lc = pd.merge(times,lc.drop(['t'],axis=1),how='left',on='cad')
         lc['fmask'] = lc['fmask']!=False        
-
-#        lc['t'] -= bjd0
         return lc
+
+    def condition_pixel_decorrelation4(lc):
+        lc['fmask'] = lc['fmask']!=False
+        lc['f_not_normalized'] = lc['fdt_t_roll_2D']
+        lc['f'] = lc['fdt_t_roll_2D']
+        lc['f'] /= median(lc['f'])
+        lc['f'] -= 1
+
+        # Fill in missing cadences with nans
+        # Super cludgy way of extracting the path campaign 
+        f = lambda x : os.path.split(x)[0]
+        k2_camp = os.path.basename(f(f(f(path)))).split('_')[0]
+
+        lc0 = load_lc0(k2_camp)
+        
+        lc = pd.merge(
+            lc0['cad t'.split()],
+            lc.drop('t',axis=1),on='cad',how='left'
+            )
+
+        cad_start = lc.iloc[0]['cad']
+        cad_stop = lc.iloc[-1]['cad']
+        t_start = lc.iloc[0]['t']
+
+        tbase = lc.iloc[-1]['t'] -  lc.iloc[0]['t']
+        dt = tbase / len (lc)
+
+        idxnull = lc[lc['t'].isnull()].index
+        lc.ix[idxnull,'t'] = t_start + (lc.ix[idxnull,'cad'] - cad_start)*dt
+        lc['fmask'] = lc['fmask']!=False        
+        lc['fdtmask'] = lc['fdtmask']!=False        
+        return lc
+
 
     print "reading in %s" %path
     if (path.count('.pickle') + path.count('.fits')) > 0:
@@ -462,6 +487,11 @@ def read_photometry(path,mode='minses'):
 
             lc = pd.merge(lc,dfmask,on='cad')
             lc['fmask'] = lc['pmask']
+
+        elif groupnames.count('7')==1:
+            lc = pd.read_hdf(path,'7')
+            lc = condition_pixel_decorrelation4(lc)
+
 
         lc = np.array(lc.to_records(index=False))
 

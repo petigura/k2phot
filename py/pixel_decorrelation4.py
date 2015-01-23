@@ -695,7 +695,6 @@ def detrend_t_roll_iter(lc,f0,niter=5,plot_diag=True):
         lc = detrend_roll_seg(lc,plot_diag=plot_diag)
     return lc
 
-
 def pixel_decorrelation(pixfile,lcfile,debug=False):
     """
     Run the pixel decorrelation on pixel file
@@ -716,8 +715,7 @@ def pixel_decorrelation(pixfile,lcfile,debug=False):
     lc = im.ts # This is a skeleton light curve
 
     # Load up transformation information
-    transfile = os.environ['K2_DIR']  
-    transfile = os.path.join(transfile,'JayAnderson/','pixeltrans_ch04.h5')
+    transfile = os.path.join(os.environ['K2PHOTFILES'],'pixeltrans_ch04.h5')
     trans,pnts = channel_centroids.read_channel_centroids(transfile)
     trans = pd.DataFrame(trans)
     A = trans['A']
