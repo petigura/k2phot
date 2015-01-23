@@ -470,6 +470,35 @@ def pixel_decorrelation(weightFile,debug=True):
 
     plot_pixel_decorrelation(lcFile)
 
+def pixel_decorrelation_pr(weightFile,debug=True):
+    # Load up DataFrame with 
+    dflc = read_weight_file(weightFile,debug=debug)
+    dflc['lc'] = map(im_to_lc,dflc.im.tolist())
+    dflc['ses'] = None
+
+    basename = os.path.join(
+        os.path.dirname(weightFile),
+        os.path.basename(weightFile).split('_')[0]
+        )
+
+    lcFile = basename+'.h5'
+    import pdb;pdb.set_trace()
+    for index,slc in dflc.iterrows():
+        lc = slc['lc']
+        lc = decorrelate_position_and_time_1D(lc)
+        fdt = ma.masked_array(lc['fdt_pos'],lc['fmask'])
+        fdt = fdt / ma.median(fdt) - 1
+        slc['lc'] = lc
+        slc['ses'] = get_ses(fdt)
+
+        slcsave = slc['name ses'.split()]
+        slcsave.to_hdf(lcFile,'%(name)s/header' % slcsave )
+        slc['lc'].to_hdf(lcFile,'%(name)s/lc' % slcsave)
+        print "%(name)s, mad_6-cad-mtd = %(ses)i" % slc
+
+    plot_pixel_decorrelation(lcFile)
+
+
 if __name__ == "__main__":
     p = ArgumentParser(description='Pixel Decorrelation')
     p.add_argument('weightFile',type=str)

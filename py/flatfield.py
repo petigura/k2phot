@@ -68,17 +68,6 @@ class FlatField(ImageStack):
         self.aperture_mode = None
         self.radius = None
 
-    def get_fbackground(self):
-        flux = self.flux.reshape(-1,self.npix,)
-        fbackground = np.median(flux,axis=1)
-        return fbackground
-
-    def subtract_background(self):
-        """
-        Subtracts off background value from flux
-        """
-        fbackground = self.get_fbackground() 
-        self.flux -= fbackground[:,np.newaxis,np.newaxis]  
 
     def set_dxdy_by_registration(self):
         assert hasattr(self,'weights')==False,\

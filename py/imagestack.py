@@ -23,6 +23,8 @@ class ImageStack(object):
         """
         Set the apertures used to compute photometry
         """
+        
+        
         if hasattr(locx,'__iter__'):
             assert ((len(locx)==self.nframe) &
                     (len(locy)==self.nframe) ), "Must have same length as array"
@@ -37,6 +39,19 @@ class ImageStack(object):
         ap_weights = map(get_ap_weights,self.ts.locx,self.ts.locy)
         ap_weights = np.array(ap_weights)
         self.ap_weights = ap_weights
+
+
+    def get_fbackground(self):
+        flux = self.flux.reshape(-1,self.npix,)
+        fbackground = np.median(flux,axis=1)
+        return fbackground
+
+    def subtract_background(self):
+        """
+        Subtracts off background value from flux
+        """
+        fbackground = self.get_fbackground() 
+        self.flux -= fbackground[:,np.newaxis,np.newaxis]  
 
     def get_sap_flux(self):
         ap_flux = self.flux * self.ap_weights # flux falling in aperture

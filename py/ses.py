@@ -78,6 +78,15 @@ def running_mean(fm,size):
 def ses_stats(fm):
     """
     Given a light curve what is the noise level on different timescales?
+
+    In the limit of white noise:
+    MAD = RMS / 1.5
+    
+    The MTD statistic gives higher noise than RMS because there are
+    uncertanties associated with measuring the wings.
+
+    MTD = sqrt(3/2) / sqrt(twd) * sigma, where sigma is the point-to-point rms
+
     """
     dL = []
 
@@ -105,3 +114,44 @@ def ses_stats(fm):
     dL = pd.DataFrame(dL,columns='name value twd'.split())
     dL['value']*=1e6
     return dL
+
+def source_noise(flux):
+    """
+    flux : Flux measued. Units are electrons/s, so convert them to
+    electrons by multiplying by long-cadence duration
+    """
+    
+    tint = 6.02 # Integration (s)
+    nint = 270 # Integrations in long cadence measurement
+    noise = sqrt(flux * tint * nint)
+    return noise
+
+def kepmag_to_flux(kepmag):
+    """
+    Convert kepmag_to_flux
+
+    flux is electrons/s
+    """
+    kepmag0 = 12 
+    f0 = 1.74e5
+    fkep = f0*10**(-0.4 * (kepmag - kepmag0 ))
+    return fkep
+
+def total_precision_theory(kepmag,Na):  
+    """
+    Calculate the expected precsion. I used the equation listed here:
+
+    http://keplergo.arc.nasa.gov/CalibrationSN.shtml
+
+    Note that to get the same values listed on the website, multiply
+    by their fudge factor of 1.2.
+
+    """
+    Nfr = 270 # Number of frames used in exposure (loncadence) 
+    tint = 6.02 # Seconds in an integration
+    NR = 120 # Readnoise e-
+    fkep = kepmag_to_flux(kepmag)
+    numer = sqrt(fkep*tint + Na * NR**2)
+    denom = sqrt(Nfr) * fkep* tint
+    precision = numer/denom
+    return precision
