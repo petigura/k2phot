@@ -49,7 +49,11 @@ def thruster_fires(pixfiles,csvfile,tlimits=None):
         dy = np.array(lc['dy'])
         ddx = dx[1:] - dx[:-1]
         ddy = dy[1:] - dy[:-1]
+
+        # this adding the means that at cadence i, ddx is dx[i] -
+        # dx[i-1]. The candence coming after the fastest slope will be tagged.
         lc['dds'] = np.hstack([[0],np.sqrt(ddx**2 + ddy**2)])
+
 
     # Join all the different light curves together
     lc2 = lcL[0]

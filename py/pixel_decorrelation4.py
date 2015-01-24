@@ -717,16 +717,7 @@ def pixel_decorrelation(pixfile,lcfile,debug=False):
     # Load up transformation information
     transfile = os.path.join(os.environ['K2PHOTFILES'],'pixeltrans_ch04.h5')
     trans,pnts = channel_centroids.read_channel_centroids(transfile)
-    trans = pd.DataFrame(trans)
-    A = trans['A']
-    B = trans['B']
-    C = trans['C']
-    D = trans['D']
-    scale = sqrt(A*D-B*C) - 1
-    theta = arctan2(B-C,D+A) 
-    s1 = (A-D)/2  
-    s2 = (B+C)/2      
-    trans['roll'] = theta * 2e5 # arcsec
+    trans['roll'] = trans['theta'] * 2e5
 
     # Merge transformation info with the rest of the light curve
     pnts = pd.DataFrame(pnts[0]['cad'.split()])
@@ -745,11 +736,11 @@ def pixel_decorrelation(pixfile,lcfile,debug=False):
     norm = Normalizer(lc['fsap'].median())
     lc['f'] = norm.norm(lc['fsap'])
     f0 = np.array(lc['f'].copy())
-    lc['fmask'] = lc['f'].isnull()
+    lc['fmask'] = lc['f'].isnull() | lc['thrustermask']
     lc['fdtmask'] = lc['fmask'].copy()
-    lc = detrend_t(lc,plot_diag=True) # sets fdt_t 
+
+    lc = detrend_t(lc,plot_diag=True) 
     lc = detrend_roll_seg(lc,plot_diag=True)
-    lc['fdtmask'] = lc['fmask'] | lc['f'].isnull()
 
     # Generate some diagnostic plots of initial run 
     figures = [manager.canvas.figure for manager in Gcf.get_all_fig_managers()]

@@ -9,7 +9,8 @@ import k2_catalogs
 import numpy as np
 from astropy.io import fits
 from matplotlib import mlab
-
+from matplotlib import pylab as plt
+from scipy import ndimage as nd
 K2_ARCHIVE = os.environ['K2_ARCHIVE']
 
 def get_channel_headers(headerdb,k2_camp,channel):
@@ -53,11 +54,82 @@ def channel_centroids(headerdb,k2_camp,channel,iref,h5file=None,kepmaglim=[11,14
 
     return cent
 
+
+
+def plot_trans(trans):
+    """
+    Diagnostic plot that shows different transformation parameters
+    """
+    keys = 'scale theta skew1 skew2'.split()
+    nrows = 5
+    fig,axL = plt.subplots(nrows=nrows,figsize=(20,8),sharex=True)
+    fig.set_tight_layout(True)
+    for i,key in enumerate(keys):
+        plt.sca(axL[i])
+        plt.plot(trans[key])
+        plt.ylabel(key)
+        
+    plt.sca(axL[4])
+    dtheta = np.array(trans['dtheta'])
+    thrustermask = np.array(trans['thrustermask'])
+    plt.plot(dtheta,'-',mew=0)
+    plt.ylabel('$\Delta$ theta')
+    plt.xlabel('Observation')
+    i = np.arange(len(dtheta))
+    plt.plot(i[thrustermask],dtheta[thrustermask],'.')
+    
+def get_thrustermask(dtheta):
+    """
+    Identify thruster fire events.
+
+    Parameters 
+    ----------
+    dtheta : roll angle for contiguous observations
+
+    Returns
+    -------
+    thrustermask : boolean array where True means thruster fire
+    """
+    
+
+    medfiltwid = 10 # Filter width to identify discontinuities in theta
+    sigfiltwid = 100 # Filter width to establish local scatter in dtheta
+    thresh = 10 # Threshold to call something a thruster fire (units of sigma)
+
+    medtheta = nd.median_filter(dtheta,medfiltwid)
+    diffdtheta = np.abs(dtheta - medtheta)
+    sigma = nd.median_filter(diffdtheta,sigfiltwid) * 1.5
+    thrustermask = np.array(diffdtheta > thresh*sigma)
+    return thrustermask
+
+def trans_add_columns(trans):
+    """
+    Add useful columns derived from trans array
+    """
+    trans = pd.DataFrame(trans)
+    trans['scale'] = np.sqrt(trans.eval('A*D-B*C'))-1 
+    trans['scale'][abs(trans['scale']) > 0.1] = None
+    trans['skew1'] = trans.eval('(A-D)/2')
+    trans['skew2'] = trans.eval('(B+C)/2')
+    trans['theta'] = trans.eval('(B-C)/(A+D)')
+    obs = np.arange(len(trans))
+    bi = np.array(np.isnan(trans.theta))
+    trans.loc[bi,'theta'] = np.interp(obs[bi],obs[~bi],trans[~bi].theta)
+    theta = np.array(trans['theta'])
+    dtheta = theta[1:] - theta[:-1]
+    dtheta = np.hstack([[0],dtheta])
+    trans['dtheta'] = dtheta
+    return trans
+
 def read_channel_centroids(h5file):
     with h5py.File(h5file) as h5:
         trans = h5['trans'][:] 
         pnts = h5['pnts'][:]
-        return trans,pnts
+
+    
+    trans = trans_add_columns(trans)
+    trans['thrustermask'] = get_thrustermask(trans['dtheta'])
+    return trans,pnts
 
 if __name__=='__main__':
     p = ArgumentParser(description='Read in fitsfiles and compute centroids')
