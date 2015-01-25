@@ -18,6 +18,8 @@ import pandas as pd
 k2_dir = os.environ['K2_DIR']
 from astropy import units as u
 from astropy.coordinates import Longitude,Latitude
+from astropy.io import fits
+
 import numpy as np
 import sqlite3
 
@@ -138,6 +140,8 @@ def read_diag(k2_camp,nbin=20):
 
     dfdiag = pd.concat(dfdiag)
     return dfdiag
+
+
 
 def makePixelFileURL(epic, cycle, mode='K2'):
     """Generate the URL for a particular target. 

@@ -23,11 +23,11 @@ class ImageStack(object):
         """
         Set the apertures used to compute photometry
         """
-        
-        
         if hasattr(locx,'__iter__'):
             assert ((len(locx)==self.nframe) &
                     (len(locy)==self.nframe) ), "Must have same length as array"
+
+        self.radius = radius
         self.ts['locx'] = locx
         self.ts['locy'] = locy
 

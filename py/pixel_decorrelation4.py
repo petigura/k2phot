@@ -18,7 +18,13 @@ import channel_centroids
 from pixel_io import bjd0
 from ses import ses_stats
 import flatfield
+from astropy.io import fits
+import contextlib
 
+noisekey = 'fdt_t_roll_2D' # Column to use to compute noise
+noisename = 'mad_6_cad_mtd' # Noise metric to use for optimal aperture
+outfmt = dict(marker='o',mew=0,mfc='r',alpha=0.5,lw=0,zorder=0,ms=8)
+infmt = dict(marker='.',lw=0,zorder=5)
 
 segments = """\
 k2_camp start stop
@@ -36,6 +42,16 @@ def plotseg():
     for i in segments.iterrows():
         plt.axvspan(i[1]['start'],i[1]['stop'])
 
+
+def namemag(fitsfile):
+    """
+    Pull name and magnitude from fits file
+    """
+    with fits.open(fitsfile) as hduL:
+        hdr = hduL[0].header
+        return "EPIC-%i, KepMag=%.1f" % (hdr['KEPLERID'],hdr['KEPMAG'])
+
+
 def split_lc(lc):
     seg = segments.copy()
     camp_seg = seg#[seg.k2_camp==k2_camp]
@@ -45,282 +61,29 @@ def split_lc(lc):
         lc_segments +=[lc_seg]
     return lc_segments
 
-def plot_position_PCs(lc):
-    test = plt.scatter(
-        lc.pos_pc0,lc.pos_pc1,c=lc.f,linewidths=0,alpha=0.8,s=20)
+def square_plots(n):
+    sqn = sqrt(n)
+    ncol = int(sqn) + 1
+    nrow = int(np.ceil(n / ncol))
+    return nrow,ncol
 
-    plt.xlabel('pos_pc0')
-    plt.ylabel('pos_pc1')
-    plt.colorbar()
-
-def plot_gp_pos(lc,gp_pos):
-    desc = lc.describe()
-    res = 50
-    lim1 = desc.ix['min','pos_pc0'], desc.ix['max','pos_pc0']
-    lim2 = desc.ix['min','pos_pc1'], desc.ix['max','pos_pc1']
-    x1, x2 = np.meshgrid(np.linspace(lim1[0],lim1[1], res),
-                         np.linspace(lim2[0],lim2[1], res))
-    xx = np.vstack([x1.reshape(x1.size), x2.reshape(x2.size)]).T
-    y_pred, MSE = gp_pos.predict(xx, eval_MSE=True)
-    y_pred = y_pred.reshape((res,res))
-    extent = (lim1[0],lim1[1],lim2[0],lim2[1])
-    plt.imshow(
-        np.flipud(y_pred), alpha=0.8, extent=extent,aspect='auto')
-
-class Lightcurve(pd.DataFrame):
-    def set_position_PCs(self):
-        X = lc_to_X(self,'dx dy'.split())
-        pca = PCA(n_components=2)
-        X_r = pca.fit(X).transform(X)
-        for i in [0,1]:
-            self['pos_pc%i' %i ] = X_r[:,i]
-
-    def get_fm(self,col,maskcol='fmask'):
-        return ma.masked_array(col,maskcol)
-
-    def get_X(self,col,maskcol=None):
-        if maskcol is None:
-            return lc_to_X(self,col)
-        else:
-            lc2 = self[~self[maskcol]]
-            return lc_to_X(lc2,col)
-
-
-def plot_detrend(lc,columns):
+def roblims(x,p,fac):
     """
+    Robust Limits
+
+    Return the robust limits for a plot
+
     Parameters
     ----------
-    columns : flux, fit, residuals
-
+    x  : input array
+    p : percentile (compared to 50) to use as lower limit
+    fac : add some space
     """
-    legkw = dict(frameon=False,fontsize='x-small')
-    fkey,ftndkey,fdtkey = columns
-    t = lc['t']
-    if min(t) > 2e6:
-        t -= bjd0
+    ps = np.percentile(x,[p,50,100-p])
+    lim = ps[0] - (ps[1]-ps[0]) * fac,ps[2]+(ps[2]-ps[1]) * fac
+    return lim
 
-    get_masked = lambda key : ma.masked_array(lc[key],lc['fmask'])
-    res = map(get_masked,columns)
-    f,ftnd,fdt = res
-
-    fses = f / ma.median(f) - 1 
-    fdtses = fdt / ma.median(fdt) - 1 
-    fses,fdtses = map(get_ses,[fses,fdtses])
-
-    fig,axL = plt.subplots(nrows=2,figsize=(12,6),sharex=True,sharey=True)
-
-    plt.sca(axL[0])
-    plt.plot(t,f,label='Flux SES = %i' % fses)
-    plt.plot(t,ftnd,label='Fit')
-    plt.ylabel('Flux')
-
-    plt.legend(**legkw)
-
-    plt.sca(axL[1])
-    plt.plot(t,fdt,label='Residuals SES = %i' % fdtses)
-    plt.legend(**legkw)
-    plt.xlabel('BJD - %i' % bjd0 )
-    plt.ylabel('Flux')
-    fig.set_tight_layout(True)
-
-
-class Normalizer:
-    def __init__(self,xmed):
-        self.xmed = xmed
-    def norm(self,x):
-        return x / self.xmed - 1
-    def unnorm(self,x):
-        return (x + 1) * self.xmed
-
-
-def get_ses(f):
-    ses = ses_stats(f)
-    ses.index = ses.name
-    ses = ses.ix['mad_6-cad-mtd','value']
-    return ses
-
-def read_weight_file(h5filename,debug=False):
-    with h5py.File(h5filename,'r') as h5:
-        groupnames = [i[0] for i in h5.items()]
-
-    dfweights = pd.DataFrame(groupnames,columns=['name'])
-    if debug:
-        dfweights = dfweights[dfweights.name.str.contains('r=3|r=4') &
-                              dfweights.name.str.contains('mov=0_weight=0')]
-
-    dfweights['im'] = ''
-    for index,sweights in dfweights.iterrows():
-        sweights['im'] = flatfield.read_hdf(h5filename,sweights['name'])
-
-    return dfweights
-
-def im_to_lc(im):
-    frames = im.get_frames()
-    moments = [frame.get_moments() for frame in frames]
-    moments = pd.DataFrame(
-        moments,columns='m10 m01 mupr20 mupr02 mupr11'.split()
-        )
-
-    lc = pd.concat([im.ts,moments],axis=1)
-
-    # Add the thurster fire mask
-    k2_camp = 'C%i' % fits.open(im.fn)[0].header['CAMPAIGN']
-    lc = flatfield.add_cadmask(lc,k2_camp)
-
-    lc['f'] = im.get_sap_flux()
-    lc['dx'] = lc['m01']
-    lc['dy'] = lc['m10']
-    return lc
-
-fmad = lambda x : np.median(abs(x))
-fnugget = lambda x : (1.6 * fmad(x - np.median(x) ))**2
-
-def fit_gp_sigma_clip(gp,X,y,verbose=False):
-    binlier = np.ones(X.shape[0]).astype(bool)
-    binlier_last = binlier.copy()
-    colors='rcyrcy'
-    i = 0 
-    done = False
-    while not done:
-        if verbose:
-            print binlier.sum(),i
-        gp.fit(X[binlier,:],y[binlier])
-        y_pred = gp.predict(X)
-        mad = fmad(y - y_pred)
-
-        binlier_last = binlier.copy()
-        binlier = abs(y - y_pred) < 4*mad
-
-        if np.all(binlier_last==binlier) or (i >= 3):
-            done = True
-
-        i+=1
-
-    return gp
-
-def decorrelate_position_and_time(lc,verbose=True):
-    lc = Lightcurve(lc)
-
-    lc['f'] /= np.median(lc['f'])
-    lc['f'] -= 1
-
-    lc.set_position_PCs()
-
-    X_t = lc_to_X(lc,'t')
-    X_pos = lc_to_X(lc,['pos_pc0','pos_pc1'])
-    y = np.array(lc['f'])
-
-    gpkw = dict(
-        regr='linear',corr='squared_exponential',nugget=fnugget(y))
-
-    gp_t = GaussianProcess(theta0=3,**gpkw)
-
-    thetaU = [1,1]
-    thetaL = [1e-3,1e-3]
-    theta0 = [1e-2,1e-2]
-    gp_pos = GaussianProcess(theta0=theta0,thetaU=thetaU,thetaL=thetaL,**gpkw)
-
-    fdt_pos_last = y.copy()
-    fdt_pos = y.copy()
-
-    i = 0
-
-    done = False
-    while not done:
-        ndiff = (fdt_pos - fdt_pos_last) / fdt_pos_last
-        chi2 = np.sum(ndiff**2) / len(fdt_pos)
-
-        gp_t = fit_gp_sigma_clip(gp_t,X_t,fdt_pos,verbose=verbose)
-        ftnd_t = gp_t.predict(X_t)
-        fdt_t = y - ftnd_t
-
-        gp_pos = fit_gp_sigma_clip(gp_pos,X_pos,fdt_t,verbose=verbose)
-        ftnd_pos = gp_pos.predict(X_pos)
-
-        fdt_pos_last = fdt_pos.copy()
-        fdt_pos = y - ftnd_pos
-
-        fdt_t_pos = y - ftnd_t - ftnd_pos
-#        gp_t.nugget = gp_pos.nugget = fnugget(fdt_t_pos)
-
-        if np.allclose(fdt_pos,fdt_pos_last) or (i >= 3):
-            done = True
-        i+=1
-
-
-    lc['fdt_pos'] = fdt_pos
-    lc['ftnd_pos'] = ftnd_pos
-
-    lc['fdt_t'] = fdt_t
-    lc['ftnd_t'] = ftnd_t
-    return lc,gp_t,gp_pos
-
-def decorrelate_position_and_time_1D(lc,verbose=False):
-    lc = Lightcurve(lc)
-    medflux = np.median(lc['f'])
-    lc['f'] /= medflux
-    lc['f'] -= 1
-    lc.set_position_PCs()
-
-    gpkw = dict(
-        regr='constant',corr='squared_exponential',nugget=fnugget(lc['f'])
-        )
-
-    gp_t = GaussianProcess(theta0=3,**gpkw)
-    gp_pos = GaussianProcess(theta0=0.03,thetaL=0.01,thetaU=0.1,**gpkw)
-
-    lc['fdt_pos_last'] = lc['f'].copy()
-    lc['fdt_pos'] = lc['f'].copy()
-
-    i = 0
-    done = False
-    while not done:
-        ndiff = (lc['fdt_pos'] - lc['fdt_pos_last']) / lc['fdt_pos_last']
-        chi2 = np.sum(ndiff**2) / len(lc)
-        if verbose:
-            print i, chi2
-
-        # Detrend against time
-        lc_gp = Lightcurve(lc[~lc.fmask])
-        gp_t = fit_gp_sigma_clip(
-            gp_t,lc_gp.get_X('t') ,np.array(lc_gp['fdt_pos']),verbose=verbose)
-
-        lc['ftnd_t'] = gp_t.predict( lc.get_X(['t']) )
-        lc['fdt_t'] = lc['f'] - lc['ftnd_t']
-        lc_segments = split_lc(lc)
-        for lc_seg in lc_segments:
-            
-            lc_seg.__class__ = Lightcurve
-            lc_seg_gp = Lightcurve(lc_seg[~lc_seg.fmask])
-
-            gp_pos = fit_gp_sigma_clip(
-                gp_pos, lc_seg_gp.get_X(['pos_pc0']), 
-                np.array(lc_seg_gp['fdt_t']),
-                verbose=verbose
-                )
-
-            lc_seg['ftnd_pos'] = gp_pos.predict(lc_seg.get_X(['pos_pc0']))
-
-        lc = pd.concat(lc_segments)
-        lc['fdt_pos_last'] = lc['fdt_pos'].copy()
-        lc['fdt_pos'] = lc['f'] - lc['ftnd_pos']
-
-        lc['ftnd_t_pos'] =  lc['ftnd_t'] + lc['ftnd_pos']
-        lc['fdt_t_pos'] = lc['f'] - lc['ftnd_t_pos']
-
-        gp_pos.nugget = gp_t.nugget = fnugget(lc['fdt_t_pos'])
-        if np.allclose(lc['fdt_pos'],lc['fdt_pos_last']) or (i >= 5):
-            done = True
-
-        i+=1
-
-    lc = lc.drop(['fdt_pos_last'],axis=1)
-    for col in 'f ftnd_t fdt_t ftnd_pos fdt_pos ftnd_t_pos fdt_t_pos'.split():
-        lc[col] +=1
-        lc[col] *= medflux
-
-    return lc
-
+@contextlib.contextmanager
 def FigureManager(basename,suffix=None):
     # Executes before code block
     plt.figure() 
@@ -330,121 +93,92 @@ def FigureManager(basename,suffix=None):
 
     # Executes after code block
     if basename is not None:
-        plt.savefig(basename+suffix)
+        figpath = basename+suffix
+        plt.savefig(figpath)
+        plt.close('all')
+        print "created %s " % figpath
 
-# Here's another way of writing the context manager using a class.
-
-#class FigureManager(object):
-#    def __init__(self,basename,suffix=None):
-#        self.basename = basename
-#        self.suffix = suffix
-#    def __enter__(self):
-#        plt.figure()
-#    def __exit__(self, exc_type, exc_val, exc_tb):
-#        if self.basename is not None:
-#            plt.savefig(self.basename+self.suffix)
-
-
-def plot_ses_vs_aperture_size(dflc):
-    dflc['r'] = dflc.name.apply(lambda x : x.split('r=')[1][0]).astype(float)
-    dflc['method'] = dflc.name.apply(lambda x : x.split('r=')[0][:-1])
-    g = dflc.groupby('method')
-    slcmin = dflc.ix[dflc['ses'].argmin()]
-
+def plot_noise_vs_aperture_size(dfaper,noisename='mad_6_cad_mtd'):
+    dmin = dfaper.sort(noisename).iloc[0]
+    
     plt.semilogy()
-    for method,idx in g.groups.iteritems():
-        df = dflc.ix[idx]
-        plt.plot(df.r,df.ses,'o-',label=method)
-
-    plt.plot(slcmin['r'],slcmin['ses'],'or',mfc='none',ms=15,mew=2,mec='r')
-    plt.legend()
+    plt.plot(dfaper.r,dfaper[noisename],'o-')
+    plt.plot(dmin['r'],dmin[noisename],'or',mfc='none',ms=15,mew=2,mec='r')
 
     xlab = 'Target Aperture Radius [pixels]'
-    txtStr = 'Minimum: %(ses).1f ppm at R=%(r).1f pixels' % slcmin
+    txtStr = 'Minimum: %.1f ppm at R=%.1f pixels' % \
+             (dmin[noisename],dmin['r'])
 
     plt.xlabel(xlab)
-    plt.ylabel('RMS [ppm]', )
+    plt.ylabel('Noise (%s) [ppm]' % noisename)
     plt.minorticks_on()
 
-    desc = dflc.ses.describe()
+    desc = dfaper[noisename].describe()
     factor = 1.2
     yval = desc['min']/factor,desc['max']*factor
     plt.ylim(yval)
     yticks = np.logspace(np.log10(yval[0]), np.log10(yval[1]), 8)
     plt.yticks(yticks, ['%i' % el for el in yticks])
+    plt.minorticks_off()
 
-def plot_pixel_decorrelation(lcFile):
-    dflc = read_dflc(lcFile)
-    lcmin = dflc.ix[dflc['ses'].idxmin(),'lc']
-#    im = dflc.ix[dflc['ses'].idxmin(),'im']
+def plot_detrend(t,f,ftnd,fdt,fses,fdtses):
+    legkw = dict(frameon=False,fontsize='x-small')
 
-    # Handle plotting
-    basename = os.path.join(
-        os.path.dirname(lcFile),
-        os.path.basename(lcFile).split('.')[0]
-        )
+    fig,axL = plt.subplots(nrows=2,figsize=(12,6),sharex=True,sharey=True)
+    plt.sca(axL[0])
+    plt.plot(t,f,label='Flux SES = %i' % fses)
+    plt.plot(t,ftnd,label='Fit')
+    plt.ylabel('Flux')
+    plt.legend(**legkw)
+    plt.sca(axL[1])
+    plt.plot(t,fdt,label='Residuals SES = %i' % fdtses)
+    plt.legend(**legkw)
+    plt.xlabel('BJD - %i' % bjd0 )
+    plt.ylabel('Flux')
+    fig.set_tight_layout(True)
 
+class Lightcurve(pd.DataFrame):
+    def get_fm(self,col,maskcol='fmask'):
+        fm = ma.masked_array(self[col],self[maskcol])
+        return fm
 
-#    with FigureManager(basename,suffix='_0-median-frame.png'):
-#        fr = ff.get_medframe()
-#        fn = ff.fn
-#        epic = fits.open(fn)[0].header['KEPLERID']
-#        fr.plot()
-#        fr.plot_label(fn,epic)
+    def get_ses(self,col,maskcol='fmask'):
+        fm = self.get_fm(col,maskcol=maskcol)
+        fm = ma.masked_invalid(fm)
+        dfses = ses_stats(fm)
+        return dfses
 
+    def plot_detrend(self,columns):
+        """
+        Parameters
+        ----------
+        columns : flux, fit, residuals
 
-    with FigureManager(basename,suffix='_1-ses-vs-aperture-size.png'):
-        plot_ses_vs_aperture_size(dflc)
+        """
 
-    with FigureManager(basename,suffix='_2-pos_pc0.png'):
-        fdt_t = ma.masked_array(lcmin['fdt_t'],lcmin['fmask'])
-        plt.plot(lcmin['pos_pc0'],fdt_t,'.',
-            label='Flux (High-pass Filtered)'
-            )
+        t = self['t']
+        if min(t) > 2e6:
+            t -= bjd0
 
-        plt.plot(
-            lcmin['pos_pc0'],lcmin['ftnd_pos'],'.',
-            label='Flux Dependence\nagainst Principle Component 0'
-            )
+        f,ftnd,fdt = [self.get_fm(col) for col in columns]
+        norm = Normalizer(ma.median(f))
 
-        plt.legend(loc='best')
-        plt.xlabel('Principle Component 0 [pixels]')
-        plt.ylabel('Flux')
-        desc = lcmin.ftnd_pos.describe()
-        spread = desc['max'] - desc['min']
-        plt.ylim( desc['min'] - spread, desc['max'] + spread )
-        plt.gcf().set_tight_layout(True)
-
-    with FigureManager(basename,suffix='_3-gp_t_pos.png'):
-        plot_detrend(lcmin,'f ftnd_t_pos fdt_t_pos'.split())
-
-    with FigureManager(basename,suffix='_4-gp_t_pos_zoom.png'):
-        plot_detrend(lcmin,'f ftnd_t_pos fdt_t_pos'.split())
-        desc = lcmin.ftnd_t_pos.describe()
-        spread = desc['max'] - desc['min']
-        plt.ylim( desc['min'] - spread, desc['max'] + spread )
-        plt.gcf().set_tight_layout(True)
-
-def read_dflc(path):
-    with h5py.File(path) as h5:
-        groupnames = [item[0] for item in h5.items()]
-
-    if np.any(np.array([n.count('mov') for n in groupnames]) > 0):
-        groupnames = [n for n in groupnames if n.count('mov') > 0]
+        self['fnorm'] = norm.norm(f)
+        self['fdtnorm'] = norm.norm(fdt)
         
-    dflc = []
-    for gname in groupnames:
-        s = pd.read_hdf(path,'%s/header' % gname) 
-        s['lc'] = pd.read_hdf(path,'%s/lc' % gname)
-        dflc += [s]
+        fses = self.get_ses('fnorm').ix[noisename]
+        fdtses = self.get_ses('fdtnorm').ix[noisename]
+        plot_detrend(t,f,ftnd,fdt,fses,fdtses)
+        self.drop(['fnorm','fdtnorm'],axis=1)
 
-    dflc = pd.DataFrame(dflc)
-    return dflc
+class Normalizer:
+    def __init__(self,xmed):
+        self.xmed = xmed
+    def norm(self,x):
+        return x / self.xmed - 1
+    def unnorm(self,x):
+        return (x + 1) * self.xmed
 
-
-
-outfmt = dict(marker='o',mew=0,mfc='r',alpha=0.5,lw=0,zorder=0,ms=8)
-infmt = dict(marker='.',lw=0,zorder=5)
 
 def detrend_t(lc,plot_diag=False):
     """
@@ -484,11 +218,6 @@ def detrend_t(lc,plot_diag=False):
     t = lc_bin_t[tkey] # Independent variable
     y = lc_bin_t[ykey] # Error on dependent variable
     yerr = lc_bin_t['yerr']
-
-
-#    t = lc_gp[tkey] # Independent variable
-#    y = lc_gp[ykey] # Error on dependent variable
-#    yerr = 1e-4
 
     # Construct GP
     theta_t = L_t**2
@@ -589,30 +318,6 @@ def detrend_roll(lc,plot_diag=False,axL=None):
 
     return lc
 
-def square_plots(n):
-    sqn = sqrt(n)
-    ncol = int(sqn) + 1
-    nrow = int(np.ceil(n / ncol))
-    return nrow,ncol
-
-
-def roblims(x,p,fac):
-    """
-    Robust Limits
-
-    Return the robust limits for a plot
-
-    Parameters
-    ----------
-    x  : input array
-    p : percentile (compared to 50) to use as lower limit
-    fac : add some space
-    """
-    ps = np.percentile(x,[p,50,100-p])
-    lim = ps[0] - (ps[1]-ps[0]) * fac,ps[2]+(ps[2]-ps[1]) * fac
-    return lim
-
-
 def detrend_roll_seg(lc,plot_diag=False):
     print "Light curve: ntotal=%i nfmask=%i nfdtmask=%i" % \
         (len(lc),lc['fmask'].sum(),lc['fdtmask'].sum())
@@ -695,10 +400,57 @@ def detrend_t_roll_iter(lc,f0,niter=5,plot_diag=True):
         lc = detrend_roll_seg(lc,plot_diag=plot_diag)
     return lc
 
+def detrend_t_roll_2D(lc):
+    tkey = 't roll'.split() # name of dependent variable
+    ykey = 'f' # name of independent variable
+    fdtkey = 'fdt_t_roll_2D' 
+    ftndkey = 'ftnd_t_roll_2D' 
+    lc_gp = lc[~lc.fdtmask]
+    b = np.array(~lc.fdtmask)
+    x = np.array(lc_gp[tkey])
+    y = lc[ykey][b]
+    yerr = 1e-4
+    k2d = 1.*kernels.ExpSquaredKernel([4**2,10**2],ndim=2) 
+    gp = george.GP(k2d)
+    gp.compute(x,yerr)
+    mu,cov = gp.predict(y,lc[tkey])
+    lc[ftndkey] = mu
+    lc[fdtkey] = lc[ykey] - lc[ftndkey]
+    return lc
+
+
 def pixel_decorrelation(pixfile,lcfile,debug=False):
     """
     Run the pixel decorrelation on pixel file
     """
+
+    # Set parameters 
+    r0 = 3 # Identify outliers using 1D decorrelation. r0 is the aperture to use
+
+    # Set parameters used in detrend_t_roll_iter, see that function for docs
+    if debug:
+        dfiter = dict(
+            niter=[1], 
+            sigma_clip=[2], 
+            plot_diag=[True], 
+            )
+        s = "debug mode"
+        apertures = [3,4]
+        niter0 = 2
+
+    else:
+        dfiter = dict(
+            niter=[5,3,3],
+            sigma_clip=[5,3,2],
+            plot_diag=[False,False,True]
+            )
+
+        s = "full mode"
+        apertures = range(2,8)
+        niter0 = 5
+
+    dfiter = pd.DataFrame(dfiter)
+
     basename = os.path.splitext(lcfile)[0]
     starname = os.path.basename(basename)
 
@@ -724,51 +476,31 @@ def pixel_decorrelation(pixfile,lcfile,debug=False):
     trans = pd.concat([trans,pnts],axis=1)
     lc = pd.merge(trans,lc,on='cad')
 
-    # Perform an initial run using a r=3 pixel aperture. We'll grab
-    # the outliers from this run and use it in subsequent runs
+    # Part 1 
+    # Perform an initial run with a single aperture size
+    # grab the outliers from this run and use it in subsequent runs
+    im.set_apertures(x,y,r0)
+    lc = Lightcurve(lc) # upcast to light curve object
 
-    r = 3
-    im.set_apertures(x,y,r)
     lc['fsap'] = im.get_sap_flux()
 
     # Standardize the data
-
     norm = Normalizer(lc['fsap'].median())
     lc['f'] = norm.norm(lc['fsap'])
     f0 = np.array(lc['f'].copy())
     lc['fmask'] = lc['f'].isnull() | lc['thrustermask']
     lc['fdtmask'] = lc['fmask'].copy()
 
-    lc = detrend_t(lc,plot_diag=True) 
-    lc = detrend_roll_seg(lc,plot_diag=True)
+    lc = detrend_t(lc,plot_diag=False) 
+    lc = detrend_roll_seg(lc,plot_diag=False)
 
-    # Generate some diagnostic plots of initial run 
-    figures = [manager.canvas.figure for manager in Gcf.get_all_fig_managers()]
-    for i,fig in enumerate(figures):
-        figpath = basename+"_iter=-1_%i.png" % i
-        fig.savefig(figpath)
-    plt.close('all')
-
-    dfiter = pd.DataFrame(
-        dict(
-            niter=[5,3,3],
-            sigma_clip=[5,3,2],
-            plot_diag=[False,False,True]
-            )
-        )
-    
-
-    if debug:
-        dfiter = pd.DataFrame(
-            dict(
-                niter=[1],sigma_clip=[5], plot_diag=[True]
-                ) 
-            )     
-        
     # Perform first round of iterative detrending 
-    lc = detrend_t_roll_iter(lc,f0)
+    # Figure out which observations were outliers and repeat
+    print "aperture size=%i" % r0 
+    print "running detrend_t_roll_iter with following parameters:"
+    print dfiter.to_string()
+    lc = detrend_t_roll_iter(lc,f0,niter=niter0)
     for i,row in dfiter.iterrows():
-        # Figure out which observations were outliers and repeat
         sig = np.median(np.abs(lc['fdt_t_roll']))*1.5
         boutlier = np.array(np.abs(lc['fdt_t_roll']) > row['sigma_clip']*sig)
         lc['fdtmask'] = lc['fdtmask'] | boutlier
@@ -776,93 +508,145 @@ def pixel_decorrelation(pixfile,lcfile,debug=False):
             lc,f0,niter=row['niter'],plot_diag=row['plot_diag']
             )
 
-        figures = [m.canvas.figure for m in Gcf.get_all_fig_managers()]
-        for j,fig in enumerate(figures):
-            figpath = basename+"_iter=%i_%i.png" % (i,j)
-            fig.savefig(figpath)
-        plt.close('all')
+    figures = [m.canvas.figure for m in Gcf.get_all_fig_managers()]
+    for i,fig in enumerate(figures):
+        figpath = basename+"_fdt_t_roll_r=%i_%i.png" % (r0,i)
+        fig.savefig(figpath)
+    plt.close('all')
 
-    # Save the mask for future runs
-    fdtmask = lc['fdtmask'].copy()
-    lc.to_hdf(basename,'%i' % r)
+    fdtmask = lc['fdtmask'].copy() # Save the mask for future runs
 
+    # Part 2 
     # Now rerun for different apertures
-    lcmin = None
-    minnoise = inf
-    minr = inf
-
-    for r in range(2,8):
+    dfaper = []
+    for r in apertures:
+        # Set apertures and normalize light curve
         im.set_apertures(x,y,r)
         lc['fsap'] = im.get_sap_flux()
-        # Standardize the data
-        norm = Normalizer(lc['fsap'].median())
+        norm = Normalizer(lc['fsap'].median()) 
         lc['f'] = norm.norm(lc['fsap'])        
-
         f0 = np.array(lc['f'].copy())
-
-        lc['fdtmask'] = fdtmask
-        lc = detrend_t(lc,plot_diag=True) # sets fdt_t 
-        lc = detrend_roll_seg(lc,plot_diag=True)
-        lc = detrend_t_roll_iter(lc,f0,niter=5,plot_diag=False)
-
-        lc['f'] = f0
+        lc['fdtmask'] = fdtmask # Sub in dt mask from previous iteration
         lc = detrend_t_roll_2D(lc)
+        dfses = lc.get_ses(noisekey) # Cast as Lightcurve object
+        noise = dfses.ix[noisename]
+
+        sdisp = """\
+starname=%s
+r=%i
+mad_1_cad_mean=%.1f 
+%s=%.1f\
+""" % (starname,r,dfses.ix['mad_1_cad_mean'],noisename,dfses.ix[noisename])
+
+        sdisp = " ".join(sdisp.split())
+        print sdisp
 
 
-        noisekey = 'fdt_t_roll_2D'
-        fm = ma.masked_array(lc[noisekey],lc['fmask']) 
-        dfses = ses_stats(fm)
-        dfses.index = dfses.name
-        noise = dfses.ix['mad_6-cad-mtd','value']
+        unnormkeys = """
+f fdt_t ftnd_t fdt_t_roll ftnd_t_roll fdt_t_roll_2D ftnd_t_roll_2D
+""".split()
+
+
+        for k in unnormkeys:
+            lc[k] = norm.unnorm(lc[k])
+            lcmin = lc.copy()
+
+        dfaper.append( {'r':r, 'lc': lc, noisename:dfses.ix[noisename] } )
+
+    dfaper = pd.DataFrame(dfaper)
+    dfaper = dfaper.sort(noisename)
+
+    dmin = dfaper.iloc[0]
+    lc = dmin['lc']
+    dfapersave = dfaper[['r',noisename]]
+    to_fits(pixfile,lcfile,lc,dfapersave)
+
+    # Generate diagnostic plots
+    with FigureManager(basename,suffix='_0-median-frame.png'):
+        # Add title and stars
+        im.radius = dmin['r']
+        fr = im.get_medframe()
+        epic = fits.open(pixfile)[0].header['KEPLERID']
+        fr.plot()
+        fr.plot_label(pixfile,epic)
+        tit = namemag(pixfile) + " aperture radius=%.1f pixels" % (fr.r)
+        title(tit)
+
+    with FigureManager(basename,suffix='_1-noise-vs-aperture-size.png'):
+        plot_noise_vs_aperture_size(dfaper,noisename=noisename)
+
+    with FigureManager(basename,suffix="_fdt_t_roll_2D.png"):
+        lc.plot_detrend('f ftnd_t_roll_2D fdt_t_roll_2D'.split())
+        yl = roblims(lc['ftnd_t_roll_2D'],5,2)
+        tit = namemag(pixfile) + " Pixel Decorrelation" 
+        ylim(*yl)
         
-        keys = "mad_1-cad-mean mad_6-cad-mtd".split()
-        print "%s: r=%i " % (starname,r) + \
-            " ".join( ["%s=%.1f" % (k,dfses.ix[k,'value'])  for k in keys] ) 
+    with FigureManager(basename,suffix="_fdt_t_roll_2D_zoom.png"):
+        lc.plot_detrend('f ftnd_t_roll_2D fdt_t_roll_2D'.split())
+        yl = roblims(lc['fdt_t_roll_2D'],5,2)
+        tit = namemag(pixfile) + " Pixel Decorrelation" 
+        ylim(*yl)
 
-        if noise < minnoise:
-            minr = r
-            minnoise = noise
+    return lc,dfapersave
 
-            for k in 'f fdt_t ftnd_t fdt_t_roll ftnd_t_roll fdt_t_roll_2D ftnd_t_roll_2D'.split():
-                lc[k] = norm.unnorm(lc[k])
-                lcmin = lc.copy()
 
-    # Now set with the least noisey light curve
-    lc = lcmin.copy()
-    plot_detrend(lc,'f ftnd_t_roll_2D fdt_t_roll_2D'.split())
-    fig = gcf()
+def to_fits(pixfile,fitsfile,lc,dfaper):
+    """
+    Package up the light curve, SES information into a fits file
+    """
 
-    # Save version that shows full range 
-    yl = roblims(lc['ftnd_t_roll_2D'],5,2)
-    ylim(*yl)
-    fig.savefig(basename+"_fdt_t_roll_2D.png")
+    def fits_column(c,df):
+        array = np.array(df[ c[0] ])
+        column = fits.Column(array=array, format=c[1], name=c[0], unit=c[3])
+        return column
+
+    def BinTableHDU(df,coldefs):
+        columns = [fits_column(col,df) for col in coldefs]
+        hdu = fits.BinTableHDU.from_columns(columns)
+        for c in coldefs:
+            hdu.header[c[0]] = c[2]
+        return hdu
+
+    # Copy over primary HDU
+    hduL_pixel = fits.open(pixfile)
+    hdu0 = hduL_pixel[0]
+
+    # Light curve table
+    coldefs = [
+        ["thrustermask","L","Thruster fire","bool"],
+        ["roll","D","Roll angle","arcsec"],
+        ["cad","J","Unique candence number","int"],
+        ["t","D","Time","BJD - %i" % bjd0],
+        ["fbg","D","Background flux","electrons per second per pixel"],
+        ["fsap","D","Simple aperture photometry","electrons per second"],
+        ["fmask","L","Global mask. Observation ignored","bool"],
+        ["fdtmask","L",
+         "Detrending mask. Observation ignored in detrending model","bool"],
+        ["ftnd_t","D","Gaussian process model: GP(fsap; t)",
+         "electrons per second"],
+        ["fdt_t","D","Residuals (fsap - ftnd_t)","electrons per second"],
+        ["ftnd_t_roll","D","Gaussian process model: GP(fdt_t; roll)",     
+         "electrons per second"],
+        ["fdt_t_roll","D","Residuals (fdt_t - ftnd_t_roll)",
+         "electrons per second"],
+        ["ftnd_t_roll_2D","D","Gaussian process model: GP(fsap; t, roll)",     
+         "electrons per second"],
+        ["fdt_t_roll_2D","D","Residuals (fsap - ftnd_t_roll_2D)",
+         "electrons per second"]
+    ]
     
-    # Save version that shows full range 
-    yl = roblims(lc['fdt_t_roll_2D'],5,2)
-    ylim(*yl)
-    fig.savefig(basename+"_fdt_t_roll_2D_zoom.png")
+    hdu1 = BinTableHDU(lc,coldefs)
 
-    outfile = basename+".h5"
-    lc.to_hdf(outfile,'%i' % r)
+    # dfaper 
+    coldefs = [
+        ["r","D","Radius of aperture","pixels"],
+        [noisename,"D","Noise metric used to optimize aperture size","pixels"],
+    ]
 
-def detrend_t_roll_2D(lc):
-    tkey = 't roll'.split() # name of dependent variable
-    ykey = 'f' # name of independent variable
-    fdtkey = 'fdt_t_roll_2D' 
-    ftndkey = 'ftnd_t_roll_2D' 
-    lc_gp = lc[~lc.fdtmask]
-    b = np.array(~lc.fdtmask)
-    x = np.array(lc_gp[tkey])
-    y = lc[ykey][b]
-    yerr = 1e-4
-    k2d = 1.*kernels.ExpSquaredKernel([4**2,10**2],ndim=2) 
-    gp = george.GP(k2d)
-    gp.compute(x,yerr)
-    mu,cov = gp.predict(y,lc[tkey])
-    lc[ftndkey] = mu
-    lc[fdtkey] = lc[ykey] - lc[ftndkey]
-    return lc
-
+    hdu2 = BinTableHDU(dfaper,coldefs)        
+    hduL = fits.HDUList([hdu0,hdu1,hdu2])
+    hduL.writeto(fitsfile,clobber=True)
+    return hduL
         
 if __name__ == "__main__":
     p = ArgumentParser(description='Pixel Decorrelation')

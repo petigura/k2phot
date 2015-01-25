@@ -88,7 +88,7 @@ def ses_stats(fm):
     MTD = sqrt(3/2) / sqrt(twd) * sigma, where sigma is the point-to-point rms
 
     """
-    dL = []
+    dfses = []
 
     def ma_mad(x):
         fom = ma.median(ma.abs(x))
@@ -99,21 +99,23 @@ def ses_stats(fm):
     ma_std = lambda x : ma.std(x)
     for twd in [1,4,6,8,12]:
         fom = ma_std(running_mean(fm,twd))
-        dL.append(['rms_%i-cad-mean' % twd, fom ,twd])
+        dfses.append(['rms_%i_cad_mean' % twd, fom ,twd])
 
         fom = ma_std(mtd(fm,twd))
-        dL.append(['rms_%i-cad-mtd' % twd, fom,twd])
+        dfses.append(['rms_%i_cad_mtd' % twd, fom,twd])
 
         fom = ma_mad(running_mean(fm,twd))
-        dL.append(['mad_%i-cad-mean' % twd, fom ,twd])
+        dfses.append(['mad_%i_cad_mean' % twd, fom ,twd])
 
         fom = ma_mad(mtd(fm,twd))
-        dL.append(['mad_%i-cad-mtd' % twd, fom,twd])
+        dfses.append(['mad_%i_cad_mtd' % twd, fom,twd])
 
 
-    dL = pd.DataFrame(dL,columns='name value twd'.split())
-    dL['value']*=1e6
-    return dL
+    dfses = pd.DataFrame(dfses,columns='name value twd'.split())
+    dfses['value']*=1e6
+    dfses.index=dfses.name
+    dfses = dfses['value']
+    return dfses
 
 def source_noise(flux):
     """

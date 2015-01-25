@@ -429,9 +429,6 @@ def read_photometry(path,mode='minses'):
         f = lambda x : os.path.split(x)[0]
         k2_camp = os.path.basename(f(f(f(path)))).split('_')[0]
 
-
-
-
         lc['fmask'] = lc['fmask']!=False
         lc['f_not_normalized'] = lc['fdt_t_pos']
         lc['f'] = lc['fdt_t_pos']
@@ -459,7 +456,6 @@ def read_photometry(path,mode='minses'):
         return lc
 
     def condition_pixel_decorrelation4(lc):
-
         lc['fmask'] = lc['fmask']!=False
         lc['f_not_normalized'] = lc['fdt_t_roll_2D']
         lc['f'] = lc['fdt_t_roll_2D']
@@ -490,13 +486,17 @@ def read_photometry(path,mode='minses'):
         idxnull = lc[lc['t'].isnull()].index
         lc.ix[idxnull,'t'] = t_start + (lc.ix[idxnull,'cad'] - cad_start)*dt
         lc['fmask'] = lc['fmask']!=False        
-        lc['fdtmask'] = lc['fdtmask']!=False        
+        lc['fdtmask'] = lc['fdtmask']!=False
+        lc['thrustermask'] = lc['thrustermask']!=False        
         return lc
 
 
     print "reading in %s" %path
-    if (path.count('.pickle') + path.count('.fits')) > 0:
-        lc = read_photometry_crossfield(path)
+    if path.count('.fits') > 0:
+        hduL = fits.open(path)
+        lc = LE(hduL[1].data)
+        lc = pd.DataFrame(lc)
+        lc = condition_pixel_decorrelation4(lc)
 
     if path.count('.h5') > 0:
         with h5py.File(path) as h5:
@@ -535,8 +535,7 @@ def read_photometry(path,mode='minses'):
             lc = pd.read_hdf(path,'7')
             lc = condition_pixel_decorrelation4(lc)
 
-
-        lc = np.array(lc.to_records(index=False))
+    lc = np.array(lc.to_records(index=False))
 
     assert np.isnan(lc['cad']).sum()==0,"Can't have null cadences "
     assert np.isnan(lc['t']).sum()==0,"Can't have null times "
