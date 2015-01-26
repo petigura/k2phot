@@ -100,6 +100,7 @@ def FigureManager(basename,suffix=None):
 
 def plot_noise_vs_aperture_size(dfaper,noisename='mad_6_cad_mtd'):
     dmin = dfaper.sort(noisename).iloc[0]
+    dfaper = dfaper.sort('r')
     
     plt.semilogy()
     plt.plot(dfaper.r,dfaper[noisename],'o-')
@@ -549,9 +550,10 @@ f fdt_t ftnd_t fdt_t_roll ftnd_t_roll fdt_t_roll_2D ftnd_t_roll_2D
 
         for k in unnormkeys:
             lc[k] = norm.unnorm(lc[k])
-            lcmin = lc.copy()
 
-        dfaper.append( {'r':r, 'lc': lc, noisename:dfses.ix[noisename] } )
+        dfaper.append( 
+            {'r':r, 'lc': lc.copy(), noisename:dfses.ix[noisename] } 
+        )
 
     dfaper = pd.DataFrame(dfaper)
     dfaper = dfaper.sort(noisename)
@@ -576,13 +578,15 @@ f fdt_t ftnd_t fdt_t_roll ftnd_t_roll fdt_t_roll_2D ftnd_t_roll_2D
         plot_noise_vs_aperture_size(dfaper,noisename=noisename)
 
     with FigureManager(basename,suffix="_fdt_t_roll_2D.png"):
-        lc.plot_detrend('f ftnd_t_roll_2D fdt_t_roll_2D'.split())
+        lc2 = Lightcurve(lc)
+        lc2.plot_detrend('f ftnd_t_roll_2D fdt_t_roll_2D'.split())
         yl = roblims(lc['ftnd_t_roll_2D'],5,2)
         tit = namemag(pixfile) + " Pixel Decorrelation" 
         ylim(*yl)
         
     with FigureManager(basename,suffix="_fdt_t_roll_2D_zoom.png"):
-        lc.plot_detrend('f ftnd_t_roll_2D fdt_t_roll_2D'.split())
+        lc2 = Lightcurve(lc)
+        lc2.plot_detrend('f ftnd_t_roll_2D fdt_t_roll_2D'.split())
         yl = roblims(lc['fdt_t_roll_2D'],5,2)
         tit = namemag(pixfile) + " Pixel Decorrelation" 
         ylim(*yl)
