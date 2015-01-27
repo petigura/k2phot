@@ -36,8 +36,11 @@ def channel_centroids(headerdb,k2_camp,channel,iref,h5file=None,kepmaglim=[11,14
     # Pull the first file to get length and data type
     fitsfile0 = df.iloc[0]['fitsfile']
     cent0 = fits_to_chip_centroid(fitsfile0)
-    cent = np.zeros((nstars,cent0.shape[0]), cent0.dtype)
 
+    assert np.isnan(cent0['centx'][iref])==False,\
+        "Must select a valid reference cadence. No nans"
+
+    cent = np.zeros((nstars,cent0.shape[0]), cent0.dtype)
     for i,row in df.iterrows():
         if (i%10)==0:
             print i
@@ -52,6 +55,12 @@ def channel_centroids(headerdb,k2_camp,channel,iref,h5file=None,kepmaglim=[11,14
             h5['trans'] = trans
             h5['pnts'] = pnts
 
+
+    trans,pnts = read_channel_centroids(h5file)
+    plot_trans(trans)
+    figpath = h5file[:-3] + '.png'
+    plt.gcf().savefig( )
+    print "saving %s " % figpath
     return cent
 
 
