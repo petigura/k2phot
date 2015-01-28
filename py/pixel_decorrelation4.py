@@ -656,7 +656,8 @@ if __name__ == "__main__":
     p = ArgumentParser(description='Pixel Decorrelation')
     p.add_argument('pixfile',type=str)
     p.add_argument('lcfile',type=str)
+    p.add_argument('debug',action='store_true','run in debug mode?')
     args  = p.parse_args()
-    pixel_decorrelation(args.pixfile,args.lcfile,debug=False)
+    pixel_decorrelation(args.pixfile,args.lcfile,debug=args.debug)
 
 

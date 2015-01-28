@@ -11,6 +11,7 @@ from astropy.io import fits
 from matplotlib import mlab
 from matplotlib import pylab as plt
 from scipy import ndimage as nd
+from pdplus import LittleEndian as LE
 K2_ARCHIVE = os.environ['K2_ARCHIVE']
 
 def get_channel_headers(headerdb,k2_camp,channel):
@@ -22,7 +23,8 @@ def get_channel_headers(headerdb,k2_camp,channel):
     headers = pd.merge(headers,cat,right_index=True,left_index=True)
     return headers
 
-def channel_centroids(headerdb,k2_camp,channel,iref,h5file=None,kepmaglim=[11,14]):
+def channel_centroids(headerdb,k2_camp,channel,h5file,iref=None,
+                      kepmaglim=[11,14]):
     df = get_channel_headers(headerdb,k2_camp,channel)
     df = df[df.kepmag.between(*kepmaglim)].sort('kepmag')
     df.index = range(len(df))
@@ -37,6 +39,20 @@ def channel_centroids(headerdb,k2_camp,channel,iref,h5file=None,kepmaglim=[11,14
     fitsfile0 = df.iloc[0]['fitsfile']
     cent0 = fits_to_chip_centroid(fitsfile0)
 
+    # Determine the refence frame
+    if iref==None:
+        dfcent0 = pd.DataFrame(LE(cent0))
+        ncad = len(dfcent0)
+        med = dfcent0.median()
+        dfcent0['dist'] = (
+            (dfcent0['centx'] - med['centx'])**2 +
+            (dfcent0['centy'] - med['centy'])**2
+            )
+        dfcent0 = dfcent0.iloc[ncad/4:-ncad/4]
+        dfcent0 = dfcent0.dropna(subset=['centx','centy'])
+        iref = dfcent0['dist'].idxmin()
+    
+    print "using reference frame %i" % iref
     assert np.isnan(cent0['centx'][iref])==False,\
         "Must select a valid reference cadence. No nans"
 
@@ -59,11 +75,9 @@ def channel_centroids(headerdb,k2_camp,channel,iref,h5file=None,kepmaglim=[11,14
     trans,pnts = read_channel_centroids(h5file)
     plot_trans(trans)
     figpath = h5file[:-3] + '.png'
-    plt.gcf().savefig( )
+    plt.gcf().savefig(figpath)
     print "saving %s " % figpath
     return cent
-
-
 
 def plot_trans(trans):
     """
@@ -145,15 +159,14 @@ if __name__=='__main__':
     p.add_argument('channel',type=int)
     p.add_argument('k2_camp',type=str)
     p.add_argument('headerdb',type=str)
-    p.add_argument('iref',type=int)
     p.add_argument('h5file',type=str)
     p.add_argument('--kepmagmin',type=float,default=11)
     p.add_argument('--kepmagmax',type=float,default=14)
 
     args = p.parse_args()
     cent = channel_centroids(
-        args.headerdb,args.k2_camp,args.channel,args.iref,
-        h5file=args.h5file,kepmaglim=[args.kepmagmin,args.kepmagmax]
+        args.headerdb,args.k2_camp,args.channel,h5file=args.h5file,
+        kepmaglim=[args.kepmagmin,args.kepmagmax]
         )
     print "wrote centroid info to %s" % args.h5file
 
