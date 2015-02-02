@@ -1481,7 +1481,8 @@ def getArcLengths(time, xypairs, these_nord_arcs=None, verbose=False, retmodXY=F
         noFiring = np.ones(nobs, dtype=bool)
         for kk in xrange(10):
             noFiring = (np.abs(dsdt-np.median(dsdt)) < (an.dumbconf(dsdt[noFiring], .683)[0]*5))
-        thrusterFiringIndex[ii] = True-noFiring
+
+        thrusterFiringIndex[ii] = ~noFiring
 
 
     ret = ss, thrusterFiringIndex, nord_arcs, arc_fits

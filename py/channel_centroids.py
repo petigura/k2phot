@@ -144,12 +144,26 @@ def trans_add_columns(trans):
     trans['dtheta'] = dtheta
     return trans
 
+def LE(arr):
+    names = arr.dtype.names
+    arrL = []
+    for n in names:
+        if arr.dtype[n].byteorder==">":
+            arrnew = arr[n].byteswap().newbyteorder('=')
+        else:
+            arrnew = arr[n]
+        arrL.append(arrnew)
+    arrL = np.rec.fromarrays(arrL,names=names)
+    return arrL
+
 def read_channel_centroids(h5file):
     with h5py.File(h5file) as h5:
         trans = h5['trans'][:] 
         pnts = h5['pnts'][:]
 
-    
+    trans = LE(trans)
+    pnts = LE(pnts)
+
     trans = trans_add_columns(trans)
     trans['thrustermask'] = get_thrustermask(trans['dtheta'])
     return trans,pnts

@@ -54,17 +54,19 @@ def namemag(fitsfile):
 
 def split_lc(lc):
     seg = segments.copy()
-    camp_seg = seg#[seg.k2_camp==k2_camp]
+    camp_seg = seg
     lc_segments = []
     for i,row in camp_seg.iterrows():
         lc_seg = lc.query('%(start)i <= cad <= %(stop)i' % row)
         lc_segments +=[lc_seg]
+
+    assert len(lc_segments) > 0, "No segments"
     return lc_segments
 
 def square_plots(n):
     sqn = sqrt(n)
     ncol = int(sqn) + 1
-    nrow = int(np.ceil(n / ncol))
+    nrow = int(np.ceil( float(n) / ncol)) 
     return nrow,ncol
 
 def roblims(x,p,fac):
@@ -329,7 +331,28 @@ def detrend_roll_seg(lc,plot_diag=False):
     fdtkey = 'fdt_t_roll' 
     ftndkey = 'ftnd_t_roll' 
     lc.index = lc.cad # Index by cadence
+
+    # Split the light curve up into segments of approx 10 day
+    segments = []
+    np.random.seed(0)
+
+    start = lc.iloc[0]['cad']
+    while start < lc.iloc[-1]['cad']:
+        step = 500 + np.random.randint(40) - 20
+        stop = start+step
+        segments.append( dict(start=start,stop=stop) )
+        start = stop
+
+    segments = pd.DataFrame(segments)
+    laststart = segments.iloc[-1]['start']
+    laststop = segments.iloc[-1]['stop']
+    if laststop - laststart < 250:
+        segments = segments.iloc[:-1]
+    segments.loc[segments.index[-1],'stop'] = laststop
     nseg = len(segments)
+    print "breaking up light curve into following %i segments " % nseg
+    print segments.to_string()
+
     if plot_diag:
         nrow,ncol = square_plots(nseg)
         fig = plt.figure(figsize=(12,8))
@@ -419,8 +442,24 @@ def detrend_t_roll_2D(lc):
     lc[fdtkey] = lc[ykey] - lc[ftndkey]
     return lc
 
+def read_imagestack(pixfile,tlimits=[-np.inf,np.inf]):
+    im = ImageStack(pixfile,tlimits=tlimits)
+    im.ts['fbg'] = im.get_fbackground()
+    im.flux -= im.ts['fbg'][:,np.newaxis,np.newaxis]
+    wcs = get_wcs(im.fn)
+    ra,dec = im.headers[0]['RA_OBJ'],im.headers[0]['DEC_OBJ']
+    x,y = wcs.wcs_world2pix(ra,dec,0)
+    x = float(x)
+    y = float(y)
+    return im,x,y
+    
 
-def pixel_decorrelation(pixfile,lcfile,debug=False):
+
+
+
+
+
+def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np.inf]):
     """
     Run the pixel decorrelation on pixel file
     """
@@ -455,20 +494,10 @@ def pixel_decorrelation(pixfile,lcfile,debug=False):
     basename = os.path.splitext(lcfile)[0]
     starname = os.path.basename(basename)
 
-    # Load up pixel file
-    im = ImageStack(pixfile)
-    im.ts['fbg'] = im.get_fbackground()
-    im.flux -= im.ts['fbg'][:,np.newaxis,np.newaxis]
-    wcs = get_wcs(im.fn)
-    ra,dec = im.headers[0]['RA_OBJ'],im.headers[0]['DEC_OBJ']
-    x,y = wcs.wcs_world2pix(ra,dec,0)
-    x = float(x)
-    y = float(y)
-
+    im,x,y = read_imagestack(pixfile,tlimits=tlimits)
     lc = im.ts # This is a skeleton light curve
 
     # Load up transformation information
-    transfile = os.path.join(os.environ['K2PHOTFILES'],'pixeltrans_ch04.h5')
     trans,pnts = channel_centroids.read_channel_centroids(transfile)
     trans['roll'] = trans['theta'] * 2e5
 
@@ -656,8 +685,14 @@ if __name__ == "__main__":
     p = ArgumentParser(description='Pixel Decorrelation')
     p.add_argument('pixfile',type=str)
     p.add_argument('lcfile',type=str)
-    p.add_argument('debug',action='store_true','run in debug mode?')
+    p.add_argument('transfile',type=str)
+    p.add_argument('--debug',action='store_true',help='run in debug mode?')
+    p.add_argument('--tmin', type=float, default=-np.inf,help='Minimum valid time index',)
+    p.add_argument('--tmax', type=float, default=np.inf,help='Max time')
     args  = p.parse_args()
-    pixel_decorrelation(args.pixfile,args.lcfile,debug=args.debug)
+    tlimits = [args.tmin,args.tmax]
 
-
+    pixel_decorrelation(
+        args.pixfile,args.lcfile,args.transfile,debug=args.debug,
+        tlimits=tlimits
+        )
