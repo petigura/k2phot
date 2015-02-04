@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from argparse import ArgumentParser
 import os
 from cStringIO import StringIO as sio
@@ -321,7 +323,7 @@ def detrend_roll(lc,plot_diag=False,axL=None):
 
     return lc
 
-def detrend_roll_seg(lc,plot_diag=False):
+def detrend_roll_seg(lc,plot_diag=False,verbose=False):
     print "Light curve: ntotal=%i nfmask=%i nfdtmask=%i" % \
         (len(lc),lc['fmask'].sum(),lc['fdtmask'].sum())
 
@@ -350,8 +352,9 @@ def detrend_roll_seg(lc,plot_diag=False):
         segments = segments.iloc[:-1]
     segments.loc[segments.index[-1],'stop'] = laststop
     nseg = len(segments)
-    print "breaking up light curve into following %i segments " % nseg
-    print segments.to_string()
+    if verbose:
+        print "breaking up light curve into following %i segments " % nseg
+        print segments.to_string()
 
     if plot_diag:
         nrow,ncol = square_plots(nseg)
@@ -364,7 +367,6 @@ def detrend_roll_seg(lc,plot_diag=False):
             gs00 = gridspec.GridSpecFromSubplotSpec(
                 5,1, subplot_spec=gs0[i],wspace=0.0, hspace=0.0
                 )
-
 
             ax1 = plt.subplot(gs00[0,0])
             ax2 = plt.subplot(gs00[1:,0])
