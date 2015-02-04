@@ -11,7 +11,6 @@ from astropy.io import fits
 from matplotlib import mlab
 from matplotlib import pylab as plt
 from scipy import ndimage as nd
-from pdplus import LittleEndian as LE
 K2_ARCHIVE = os.environ['K2_ARCHIVE']
 
 def get_channel_headers(headerdb,k2_camp,channel):
