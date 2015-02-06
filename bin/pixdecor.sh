@@ -71,10 +71,10 @@ echo ${PIXFILE}
 PARDB=${K2PHOTFILES}/${K2_CAMP}_pars.sqlite
 
 set -x
-#pixel_decorrelation4.py ${PIXFILE} ${LCFILE} ${TRANSFILE} ${DEBUG}
-#terraWrap.py pp ${LCFILE} ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
-#terraWrap.py grid ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
-#terraWrap.py dv ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
+pixel_decorrelation4.py ${PIXFILE} ${LCFILE} ${TRANSFILE} ${DEBUG}
+terraWrap.py pp ${LCFILE} ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
+terraWrap.py grid ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
+terraWrap.py dv ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
 
 echo "Saving results in ${RESULTSDB}"
 scrape_terra.py ${STAR_GRIDFILE} ${RESULTSDB}
