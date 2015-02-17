@@ -57,7 +57,7 @@ def fits_to_chip_centroid(fitsfile):
     wcs = get_wcs(fitsfile)
     ra,dec = hdu0.header['RA_OBJ'],hdu0.header['DEC_OBJ']
     x,y = wcs.wcs_world2pix(ra,dec,0)
-    scentx,scenty = np.round([x,y]) 
+    scentx,scenty = np.round([x,y]).astype(int)
     nrings = (apsize-1)/2
 
     x0 = scentx - nrings
