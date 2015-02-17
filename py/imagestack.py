@@ -5,7 +5,7 @@ import numpy as np
 from frame import Frame
 from numpy import ma
 class ImageStack(object):
-    def __init__(self,fn,tlimits=None):
+    def __init__(self,fn,tlimits=[-np.inf,-np.inf]):
         cube,headers = loadPixelFile(fn,tlimits=tlimits)
         self.fn = fn
         self.headers = headers

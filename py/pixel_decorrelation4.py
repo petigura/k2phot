@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 from argparse import ArgumentParser
 import os
 from cStringIO import StringIO as sio
@@ -54,17 +56,19 @@ def namemag(fitsfile):
 
 def split_lc(lc):
     seg = segments.copy()
-    camp_seg = seg#[seg.k2_camp==k2_camp]
+    camp_seg = seg
     lc_segments = []
     for i,row in camp_seg.iterrows():
         lc_seg = lc.query('%(start)i <= cad <= %(stop)i' % row)
         lc_segments +=[lc_seg]
+
+    assert len(lc_segments) > 0, "No segments"
     return lc_segments
 
 def square_plots(n):
     sqn = sqrt(n)
     ncol = int(sqn) + 1
-    nrow = int(np.ceil(n / ncol))
+    nrow = int(np.ceil( float(n) / ncol)) 
     return nrow,ncol
 
 def roblims(x,p,fac):
@@ -319,7 +323,7 @@ def detrend_roll(lc,plot_diag=False,axL=None):
 
     return lc
 
-def detrend_roll_seg(lc,plot_diag=False):
+def detrend_roll_seg(lc,plot_diag=False,verbose=False):
     print "Light curve: ntotal=%i nfmask=%i nfdtmask=%i" % \
         (len(lc),lc['fmask'].sum(),lc['fdtmask'].sum())
 
@@ -329,7 +333,29 @@ def detrend_roll_seg(lc,plot_diag=False):
     fdtkey = 'fdt_t_roll' 
     ftndkey = 'ftnd_t_roll' 
     lc.index = lc.cad # Index by cadence
+
+    # Split the light curve up into segments of approx 10 day
+    segments = []
+    np.random.seed(0)
+
+    start = lc.iloc[0]['cad']
+    while start < lc.iloc[-1]['cad']:
+        step = 500 + np.random.randint(40) - 20
+        stop = start+step
+        segments.append( dict(start=start,stop=stop) )
+        start = stop
+
+    segments = pd.DataFrame(segments)
+    laststart = segments.iloc[-1]['start']
+    laststop = segments.iloc[-1]['stop']
+    if laststop - laststart < 250:
+        segments = segments.iloc[:-1]
+    segments.loc[segments.index[-1],'stop'] = laststop
     nseg = len(segments)
+    if verbose:
+        print "breaking up light curve into following %i segments " % nseg
+        print segments.to_string()
+
     if plot_diag:
         nrow,ncol = square_plots(nseg)
         fig = plt.figure(figsize=(12,8))
@@ -341,7 +367,6 @@ def detrend_roll_seg(lc,plot_diag=False):
             gs00 = gridspec.GridSpecFromSubplotSpec(
                 5,1, subplot_spec=gs0[i],wspace=0.0, hspace=0.0
                 )
-
 
             ax1 = plt.subplot(gs00[0,0])
             ax2 = plt.subplot(gs00[1:,0])
@@ -402,6 +427,9 @@ def detrend_t_roll_iter(lc,f0,niter=5,plot_diag=True):
     return lc
 
 def detrend_t_roll_2D(lc):
+    L_t = 4**2 # Correlation length-scale for time component
+    L_roll = 10**2 # Correlation length-scale for roll component
+
     tkey = 't roll'.split() # name of dependent variable
     ykey = 'f' # name of independent variable
     fdtkey = 'fdt_t_roll_2D' 
@@ -411,16 +439,39 @@ def detrend_t_roll_2D(lc):
     x = np.array(lc_gp[tkey])
     y = lc[ykey][b]
     yerr = 1e-4
-    k2d = 1.*kernels.ExpSquaredKernel([4**2,10**2],ndim=2) 
+    k2d = 1.*kernels.ExpSquaredKernel([L_t,L_roll],ndim=2) 
     gp = george.GP(k2d)
     gp.compute(x,yerr)
-    mu,cov = gp.predict(y,lc[tkey])
+
+    X_t_roll = lc[tkey]
+
+    mu,cov = gp.predict(y,X_t_roll)
     lc[ftndkey] = mu
     lc[fdtkey] = lc[ykey] - lc[ftndkey]
+
+    # Also freeze out roll angle dependence
+    medroll = np.median( lc['roll'] ) 
+    X_t_rollmed = lc[tkey].copy()
+    X_t_rollmed['roll'] = medroll
+    yerr = 1e-4
+    mu,cov = gp.predict(y,X_t_rollmed)
+    lc['ftnd_t_rollmed'] = mu
+    lc['fdt_t_rollmed'] = lc[fdtkey] + mu
     return lc
 
+def read_imagestack(pixfile,tlimits=[-np.inf,np.inf]):
+    im = ImageStack(pixfile,tlimits=tlimits)
+    im.ts['fbg'] = im.get_fbackground()
+    im.flux -= im.ts['fbg'][:,np.newaxis,np.newaxis]
+    wcs = get_wcs(im.fn)
+    ra,dec = im.headers[0]['RA_OBJ'],im.headers[0]['DEC_OBJ']
+    x,y = wcs.wcs_world2pix(ra,dec,0)
+    x = float(x)
+    y = float(y)
+    return im,x,y
 
-def pixel_decorrelation(pixfile,lcfile,debug=False):
+
+def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np.inf]):
     """
     Run the pixel decorrelation on pixel file
     """
@@ -455,20 +506,10 @@ def pixel_decorrelation(pixfile,lcfile,debug=False):
     basename = os.path.splitext(lcfile)[0]
     starname = os.path.basename(basename)
 
-    # Load up pixel file
-    im = ImageStack(pixfile)
-    im.ts['fbg'] = im.get_fbackground()
-    im.flux -= im.ts['fbg'][:,np.newaxis,np.newaxis]
-    wcs = get_wcs(im.fn)
-    ra,dec = im.headers[0]['RA_OBJ'],im.headers[0]['DEC_OBJ']
-    x,y = wcs.wcs_world2pix(ra,dec,0)
-    x = float(x)
-    y = float(y)
-
+    im,x,y = read_imagestack(pixfile,tlimits=tlimits)
     lc = im.ts # This is a skeleton light curve
 
     # Load up transformation information
-    transfile = os.path.join(os.environ['K2PHOTFILES'],'pixeltrans_ch04.h5')
     trans,pnts = channel_centroids.read_channel_centroids(transfile)
     trans['roll'] = trans['theta'] * 2e5
 
@@ -542,11 +583,17 @@ mad_1_cad_mean=%.1f
         sdisp = " ".join(sdisp.split())
         print sdisp
 
-
-        unnormkeys = """
-f fdt_t ftnd_t fdt_t_roll ftnd_t_roll fdt_t_roll_2D ftnd_t_roll_2D
-""".split()
-
+        unnormkeys = [
+            "f",
+            "fdt_t",
+            "ftnd_t",
+            "fdt_t_roll",
+            "ftnd_t_roll",
+            "fdt_t_roll_2D",
+            "ftnd_t_roll_2D",
+            "fdt_t_rollmed",
+            "ftnd_t_rollmed",
+            ]
 
         for k in unnormkeys:
             lc[k] = norm.unnorm(lc[k])
@@ -636,7 +683,11 @@ def to_fits(pixfile,fitsfile,lc,dfaper):
         ["ftnd_t_roll_2D","D","Gaussian process model: GP(fsap; t, roll)",     
          "electrons per second"],
         ["fdt_t_roll_2D","D","Residuals (fsap - ftnd_t_roll_2D)",
-         "electrons per second"]
+         "electrons per second"],
+        ["ftnd_t_rollmed","D","GP from ftnd_roll_2D using median roll",
+         "electrons per second"],
+        ["fdt_t_rollmed","D","ftnd_t_rollmed + fdt_t_roll_2D",
+         "electrons per second"],
     ]
     
     hdu1 = BinTableHDU(lc,coldefs)
@@ -656,8 +707,14 @@ if __name__ == "__main__":
     p = ArgumentParser(description='Pixel Decorrelation')
     p.add_argument('pixfile',type=str)
     p.add_argument('lcfile',type=str)
-    p.add_argument('debug',action='store_true','run in debug mode?')
+    p.add_argument('transfile',type=str)
+    p.add_argument('--debug',action='store_true',help='run in debug mode?')
+    p.add_argument('--tmin', type=float, default=-np.inf,help='Minimum valid time index',)
+    p.add_argument('--tmax', type=float, default=np.inf,help='Max time')
     args  = p.parse_args()
-    pixel_decorrelation(args.pixfile,args.lcfile,debug=args.debug)
+    tlimits = [args.tmin,args.tmax]
 
-
+    pixel_decorrelation(
+        args.pixfile,args.lcfile,args.transfile,debug=args.debug,
+        tlimits=tlimits
+        )

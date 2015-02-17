@@ -20,7 +20,8 @@ import pylab as py
 import sys
 from scipy import signal
 from mpl_toolkits.axes_grid1 import make_axes_locatable
-from astropy.io import fits as pyfits
+from astropy.io import fits
+
 from matplotlib import pylab as plt
 import pandas as pd
 import pixel_io
@@ -30,6 +31,8 @@ import flatfield
 import photometry    
 import pixel_decorrelation2
 from pdplus import LittleEndian as LE
+from imagestack import ImageStack
+from pixel_decorrelation4 import read_imagestack,noisekey,noisename
 
 def computeCentroids(data, edata, mask):
     """Compute centroid time series.
@@ -115,7 +118,8 @@ def computeMeanCentroids(cen_detrend, ecen, transitMask):
 
     mean_cen, e_mean_cen = an.wmean((cen_detrend), 1./ecen**2, reterr=True)
     mean_cen_in, e_mean_cen_in = an.wmean((cen_detrend)[transitMask], 1./ecen[transitMask]**2, reterr=True)
-    mean_cen_out, e_mean_cen_out = an.wmean((cen_detrend)[True-transitMask], 1./ecen[True-transitMask]**2, reterr=True)
+    mean_cen_out, e_mean_cen_out = an.wmean((cen_detrend)[~transitMask], 1./ecen[~transitMask]**2, reterr=True)
+
     sdom_mean_cen_in = (cen_detrend)[transitMask].std() / np.sqrt((transitMask).sum())
 
     return  mean_cen, e_mean_cen, mean_cen_out, e_mean_cen_out, mean_cen_in, e_mean_cen_in, sdom_mean_cen_in
@@ -211,7 +215,7 @@ def cloudPlot(cen1, cen2, flux, transitMask, e_cen1=None, e_cen2=None,
     filtcen1 = signal.medfilt(cen1corrected, medFiltWid)
     filtcen2 = signal.medfilt(cen2corrected, medFiltWid)
     meanIn  = (flux / filtFlux)[transitMask].mean()
-    meanOut = (flux / filtFlux)[True-transitMask].mean()
+    meanOut = (flux / filtFlux)[~transitMask].mean()
     
     mean_cen1, e_mean_cen1, mean_cen1_out, e_mean_cen1_out, mean_cen1_in, e_mean_cen1_in, sdom_mean_cen1_in = \
         computeMeanCentroids(cen1corrected - filtcen1, e_cen1, transitMask)
@@ -367,7 +371,7 @@ def plotLightCurves(time, flux, inTransit=None, fontsize=16, title='', fig=None,
 
     ax = fig.add_subplot(111, position=pos)
     if inTransit is not None and inTransit.sum()>0:
-        ax.plot(time[True-inTransit] % per, 1e6*(flux/filtFlux - 1.)[True-inTransit], '.', color=outCol)
+        ax.plot(time[~inTransit] % per, 1e6*(flux/filtFlux - 1.)[~inTransit], '.', color=outCol)
         ax.plot(time[inTransit] % per, 1e6*(flux/filtFlux - 1.)[inTransit], '.', color=inCol)
         ax.set_xlabel('Phase-Folded Time (days)', fontsize=fontsize)
     else:
@@ -456,7 +460,7 @@ def boxTransitModel(t,tpars):
 
 def plotDiagnostics( pixFile, lcFile, candfile, starname, s2n=-1,
                      fontsize=14, medFiltWid=47, tt=None, per=None, t14=None,
-                     empiricalErrors=False):
+                     empiricalErrors=False,debug=False):
     """
     Plot Diagnostics
     
@@ -521,20 +525,16 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname, s2n=-1,
         print "%s: %s" % (f,eval(f))
 
     lc = photometry.read_photometry(lcFile)
+    if debug:
+        ncad = len(lc)
+        lc = lc[: ncad/10 ]
 
-#    dat = pyfits.getdata(lcFits)
-
+    # Load up pixel information
     # Pull tlimits from the light-curve file
     tlimits = lc['t'][[0,-1]]
-
-    # tlimits = lc['t'][[-300,-1]]
-
     tlimits[0] -= 1e-6
     tlimits[1] += 1e-6
-
-
     cube, headers = pixel_io.loadPixelFile(pixFile, tlimits=tlimits)
-
     time = cube['time'] - bjd0
     data = cube['flux']
     edata = cube['flux_err']
@@ -558,15 +558,13 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname, s2n=-1,
     inTransit, preTran, postTran = indexInOutTransit(
         time, transitModel, tpars['P'])
 
- 
-    # Hack! Use the aperture that was actually used to compute the photometry
-#    dflc = pixel_decorrelation2.read_dflc(path)
-#    lcgroupname = dflc.ix[dflc['ses'].idxmin(),'name']
-    lcgroupname = 'mov=0_weight=0_r=3'
+    im,x,y = read_imagestack(pixFile)
 
-    im = flatfield.read_hdf(
-        lcFile.replace('.h5','_weights.h5'), lcgroupname, fn=pixFile
-    )    
+    hduL = fits.open(lcFile) 
+    df = pd.DataFrame(LE(hduL[2].data))
+    r = df.sort(noisename).iloc[0]['r']
+    im.set_apertures(x,y,r)
+
 
     ap_mask = (im.ap_weights[0]) > 0
 
@@ -581,8 +579,8 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname, s2n=-1,
         )
     
     lcCube = pd.DataFrame(LE(lcCube))
-    
-    lcCube = pd.merge(lcCube,pd.DataFrame(lc)['cad fmask f fdt_t_pos'.split()])
+    lckeys = 'cad fmask f'.split() + [noisekey]
+    lcCube = pd.merge(lcCube,pd.DataFrame(lc))
     lcCube = lcCube.to_records(index=False)
     lcCubeClean = lcCube[~lcCube.fmask]
 
@@ -598,6 +596,20 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname, s2n=-1,
     # Start plotting
     fig = plt.figure(figsize=(15,9))
     axs = []
+
+
+#    EAP Future work set canvas positions using gridspec at the top level
+#    # Divide the canvaus up into 3x3 groups
+#    gs0 = gridspec.GridSpec(3,3)
+#
+#    # Sub divide into other groups
+#    gs_cloud = gridspec.GridSpecFromSubplotSpec(
+#        1,3, subplot_spec=gs0[0:2,1],wspace=0.0, hspace=0.0)
+#    gs_image = gridspec.GridSpecFromSubplotSpec(
+#        2,3, subplot_spec=gs0[0:2,1:3],wspace=0.0, hspace=0.0)
+#    gs_lc = gridspec.GridSpecFromSubplotSpec(
+#        1,1, subplot_spec=gs0[2,0:3],wspace=0.0, hspace=0.0)
+
 
     figpos = [0.73, 0.72, 0.25,0.25]
     x0, y0, dx, dy = figpos
@@ -618,7 +630,7 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname, s2n=-1,
     axs.append(ax1)
 
     fig, ax2 = plotLightCurves(
-        lcCubeClean['time'], lcCubeClean['fdt_t_pos'], 
+        lcCubeClean['time'], lcCubeClean[noisekey], 
         inTransit= lcCubeClean['inTransit'],
         fontsize=fontsize, medFiltWid=medFiltWid, 
         per=tpars['P'], fig=fig, figpos=[0.02, 0.04, .64, 0.4]
@@ -626,7 +638,7 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname, s2n=-1,
     axs.append(ax2)
 
     fig, ax34 = cloudPlot(
-        lcCubeClean['c1'], lcCubeClean['c2'], lcCubeClean['fdt_t_pos'], 
+        lcCubeClean['c1'], lcCubeClean['c2'], lcCubeClean[noisekey], 
         lcCubeClean['inTransit'],e_cen1 = lcCubeClean['ec1'], e_cen2= 
         lcCubeClean['ec2'], time = lcCubeClean['time'], fig=fig, 
         figpos=[0.02, 0.4, 0.35, 0.6], fontsize=fontsize*0.65, 
@@ -681,6 +693,17 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname, s2n=-1,
         )
     axs.append(ax9)
 
+    dirname = os.path.dirname(lcFile)
+
+    def savefig(path):
+        fig.savefig(path)
+        print "Created %s" % path
+        
+    pathpdf = os.path.join(dirname,"%s_dv.pdf" % args.starname)
+    pathpng = pathpdf.replace('.pdf','.png')
+
+    savefig(pathpdf)
+    savefig(pathpng)
 
     
 #    fig, ax1014 = plotDIA_PRF_fit(
@@ -763,8 +786,8 @@ def computeCentroidTransit(time, flux, transitModel, cen1, cen2, ecen1, ecen2, m
     shift_distance = np.sqrt(gamma1**2 + gamma2**2)
     e_shift_distance0 = np.sqrt((gamma1 * egamma1)**2 + (gamma2 + egamma2)**2) / shift_distance
     # I just use Monte Carlo for Eq. 7:
-    mc_g1 = np.random.normal(gamma1, egamma1, 1e5)
-    mc_g2 = np.random.normal(gamma2, egamma2, 1e5)
+    mc_g1 = np.random.normal(gamma1, egamma1, int(1e5) )
+    mc_g2 = np.random.normal(gamma2, egamma2, int(1e5) )
     e_shift_distance = np.sqrt(mc_g1**2 + mc_g2**2).std()
 
     #print shift_distance, e_shift_distance, e_shift_distance0
@@ -795,7 +818,7 @@ def computePixelTransit(time, c1, c2, data, transitModel, medFiltWid=47, rescale
 
     :NOTE:
 
-      We must be much more clever with K2 data. Targets move so much
+      must be much more clever with K2 data. Targets move so much
       on the detector that any given pixel's time series shows
       essentially no evidence of transits. So instead, we decorrelate
       vs. motion and a transit model
@@ -843,7 +866,7 @@ def computePixelTransit(time, c1, c2, data, transitModel, medFiltWid=47, rescale
                 pixmod = pix / mod1
                 filtPix = (pixmod) / signal.medfilt(pixmod, medFiltWid) - 1.
                 #if irow==12 and icol==12: pdb.set_trace()
-                filtPix[True-np.isfinite(filtPix)] = 0.
+                filtPix[~np.isfinite(filtPix)] = 0.
                 gammas[irow,icol] = (filtPix * (filtTransitModel)).sum() / denom
                 if rescaleErrors:
                     chi = ((filtPix - gammas[irow,icol]*(filtTransitModel))**2).sum()
@@ -1575,18 +1598,13 @@ if __name__=='__main__':
     p.add_argument('candfile',type=str)
     p.add_argument('starname',type=str)
     p.add_argument('--s2n',type=float,default=-1)
+    p.add_argument('--debug',type=int,default=0)
     args = p.parse_args()
 
     
     fig,axL = plotDiagnostics(
-        args.pixFile, args.lcFile, args.candfile, args.starname, s2n=args.s2n
+        args.pixFile, args.lcFile, args.candfile, args.starname, s2n=args.s2n,
+        debug=False
     )
 
-
-    dirname = os.path.dirname(args.lcFile)
-    pathpdf = os.path.join(dirname,"%s_dv.pdf" % args.starname)
-    pathpng = pathpdf.replace('.pdf','.png')
-
-    fig.savefig(pathpdf)
-    fig.savefig(pathpng)
 
