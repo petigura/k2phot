@@ -427,6 +427,9 @@ def detrend_t_roll_iter(lc,f0,niter=5,plot_diag=True):
     return lc
 
 def detrend_t_roll_2D(lc):
+    L_t = 4**2 # Correlation length-scale for time component
+    L_roll = 10**2 # Correlation length-scale for roll component
+
     tkey = 't roll'.split() # name of dependent variable
     ykey = 'f' # name of independent variable
     fdtkey = 'fdt_t_roll_2D' 
@@ -436,12 +439,24 @@ def detrend_t_roll_2D(lc):
     x = np.array(lc_gp[tkey])
     y = lc[ykey][b]
     yerr = 1e-4
-    k2d = 1.*kernels.ExpSquaredKernel([4**2,10**2],ndim=2) 
+    k2d = 1.*kernels.ExpSquaredKernel([L_t,L_roll],ndim=2) 
     gp = george.GP(k2d)
     gp.compute(x,yerr)
-    mu,cov = gp.predict(y,lc[tkey])
+
+    X_t_roll = lc[tkey]
+
+    mu,cov = gp.predict(y,X_t_roll)
     lc[ftndkey] = mu
     lc[fdtkey] = lc[ykey] - lc[ftndkey]
+
+    # Also freeze out roll angle dependence
+    medroll = np.median( lc['roll'] ) 
+    X_t_rollmed = lc[tkey].copy()
+    X_t_rollmed['roll'] = medroll
+    yerr = 1e-4
+    mu,cov = gp.predict(y,X_t_rollmed)
+    lc['ftnd_t_rollmed'] = mu
+    lc['fdt_t_rollmed'] = lc[fdtkey] + mu
     return lc
 
 def read_imagestack(pixfile,tlimits=[-np.inf,np.inf]):
@@ -454,11 +469,6 @@ def read_imagestack(pixfile,tlimits=[-np.inf,np.inf]):
     x = float(x)
     y = float(y)
     return im,x,y
-    
-
-
-
-
 
 
 def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np.inf]):
@@ -573,11 +583,17 @@ mad_1_cad_mean=%.1f
         sdisp = " ".join(sdisp.split())
         print sdisp
 
-
-        unnormkeys = """
-f fdt_t ftnd_t fdt_t_roll ftnd_t_roll fdt_t_roll_2D ftnd_t_roll_2D
-""".split()
-
+        unnormkeys = [
+            "f",
+            "fdt_t",
+            "ftnd_t",
+            "fdt_t_roll",
+            "ftnd_t_roll",
+            "fdt_t_roll_2D",
+            "ftnd_t_roll_2D",
+            "fdt_t_rollmed",
+            "ftnd_t_rollmed",
+            ]
 
         for k in unnormkeys:
             lc[k] = norm.unnorm(lc[k])
@@ -667,7 +683,11 @@ def to_fits(pixfile,fitsfile,lc,dfaper):
         ["ftnd_t_roll_2D","D","Gaussian process model: GP(fsap; t, roll)",     
          "electrons per second"],
         ["fdt_t_roll_2D","D","Residuals (fsap - ftnd_t_roll_2D)",
-         "electrons per second"]
+         "electrons per second"],
+        ["ftnd_t_rollmed","D","GP from ftnd_roll_2D using median roll",
+         "electrons per second"],
+        ["fdt_t_rollmed","D","ftnd_t_rollmed + fdt_t_roll_2D",
+         "electrons per second"],
     ]
     
     hdu1 = BinTableHDU(lc,coldefs)
