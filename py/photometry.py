@@ -462,12 +462,7 @@ def read_photometry(path,mode='minses'):
         lc['f'] /= median(lc['f'])
         lc['f'] -= 1
 
-        # Fill in missing cadences with nans
-        # Super cludgy way of extracting the path campaign 
-        f = lambda x : os.path.split(x)[0]
-        k2_camp = os.path.basename(f(f(f(path)))).split('_')[0]
-        
-        
+        k2_camp = "C%i" % fits.open(path)[0].header['CAMPAIGN']        
         lc = add_cadmask(lc,k2_camp)
         lc0 = load_lc0(k2_camp)
         
