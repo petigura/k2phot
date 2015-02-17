@@ -23,17 +23,19 @@ from astropy.io import fits
 import numpy as np
 import sqlite3
 
-k2cat_sqlfile = '%(K2PHOTFILES)s/catalogs/k2_catalogs.sqlite' % os.environ
-k2cat_h5file = '%(K2PHOTFILES)s/catalogs/k2_catalogs.h5' % os.environ
-
+K2PHOTFILES = os.environ['K2PHOTFILES']
 K2PHOT_DIR = os.environ['K2PHOT_DIR']
+
+k2cat_sqlfile = os.path.join(K2PHOTFILES,'catalogs/k2_catalogs.sqlite')
+k2cat_h5file = os.path.join(K2PHOTFILES,'catalogs/k2_catalogs.h5')
+
 MAST_CATALOGS = os.path.join(K2PHOT_DIR,'mast_catalogs/')
+
 
 def read_mast_cat(k2_camp):
     """
     Read catalogs using the formats specified in the MAST
     """
-
     if k2_camp=='Ceng':
         df = pd.read_csv('%s/catalogs/K2_E2_targets_lc.csv' % MAST_CATALOGS )
         df = df.dropna()
@@ -60,26 +62,6 @@ def read_mast_cat(k2_camp):
         readmefn = os.path.join(MAST_CATALOGS,readmefn)
         catalogfn = os.path.join(MAST_CATALOGS,catalogfn)
         
-        # Read in the column descriptors
-        readme = pd.read_table(readmefn ,header=None, names=['line'])
-        readme = readme[readme.line.str.contains('^#\d{1}')==True]
-        readme['col'] = readme.line.apply(
-            lambda x : x.split()[0][1:]).astype(int)
-        readme['name'] = readme.line.apply(lambda x : x.split()[1])
-        
-        # List of columns to include
-        namemap = {'ID':'epic','RA':'ra','DEC':'dec','Kp':'kepmag'}
-
-        # Read in the actual calatog
-        readme.index = readme.name
-        cut = readme.ix[namemap.keys()]
-        cut['newname'] = namemap.values()
-        cut = cut.sort('col')
-        usecols = cut.col-1
-
-        cat = pd.read_table(
-            catalogfn, sep='|', names=cut.newname, header=None, usecols=usecols
-            )
 
         targets = pd.read_csv(targetsfn,usecols=[0])
         targets = targets.rename(columns={'EPIC ID':'epic'})
@@ -90,6 +72,42 @@ def read_mast_cat(k2_camp):
 
     return cat
 
+def read_epic(k2_camp):
+    if k2_camp=='C6':
+        readmefn = "README_d14260_01_epic_c6_dmc"
+        catalogfn = "d14260_01_epic_c6_dmc.mrg.gz"
+    if k2_camp=='C7':
+        readmefn = "README_d14260_03_epic_c7_dmc"
+        catalogfn = "d14260_03_epic_c7_dmc.mrg.gz"
+
+    readmefn = os.path.join(MAST_CATALOGS,readmefn)
+    catalogfn = os.path.join(MAST_CATALOGS,catalogfn)
+
+    # Read in the column descriptors
+    readme = pd.read_table(readmefn ,header=None, names=['line'])
+    readme = readme[readme.line.str.contains('^#\d{1}')==True]
+    readme['col'] = readme.line.apply(
+        lambda x : x.split()[0][1:]).astype(int)
+    readme['name'] = readme.line.apply(lambda x : x.split()[1])
+
+    # List of columns to include
+    namemap = {'ID':'epic','RA':'ra','DEC':'dec','Kp':'kepmag'}
+
+    # Read in the actual calatog
+    readme.index = readme.name
+    cut = readme.ix[namemap.keys()]
+    cut['newname'] = namemap.values()
+    cut = cut.sort('col')
+    usecols = cut.col-1
+
+    cat = pd.read_table(
+        catalogfn, sep='|', names=cut.newname, header=None, usecols=usecols,
+        compression='gzip'
+        )
+
+    return cat
+
+    
 def read_cat(k2_camp,return_targets=True):
     """
     Read catalog
@@ -105,6 +123,9 @@ def read_cat(k2_camp,return_targets=True):
         cat = cat[cat.target]
 
     return cat
+
+
+
 
 def read_diag(k2_camp,nbin=20):
     """
