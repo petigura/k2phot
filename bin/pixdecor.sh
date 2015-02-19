@@ -1,7 +1,5 @@
 #!/usr/bin/env bash
 
-. ~/k2_setup_nersc.sh
-
 DEBUG=
 DBFILE=${SM_PROJDIR}/sm_results.db
 while getopts "h?:dc:r:s:t:" OPTION; do
@@ -66,11 +64,10 @@ echo ${PIXFILE}
 PARDB=${K2PHOTFILES}/${K2_CAMP}_pars.sqlite
 
 set -x
-#pixel_decorrelation4.py ${PIXFILE} ${LCFILE} ${TRANSFILE} ${DEBUG}
-#terra pp ${LCFILE} ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
-#terra grid ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
-#terra dv ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
-
+pixel_decorrelation4.py ${PIXFILE} ${LCFILE} ${TRANSFILE} ${DEBUG}
+terra pp ${LCFILE} ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
+terra grid ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
+terra dv ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
 
 echo "Saving results in ${RESULTSDB}"
 scrape_terra.py ${STAR_GRIDFILE} ${RESULTSDB}
