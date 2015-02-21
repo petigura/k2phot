@@ -1,8 +1,5 @@
 #!/usr/bin/env bash
 
-. ${HOME}/k2_setup_erik_laptop_dev.sh
-
-
 DEBUG=
 DBFILE=${SM_PROJDIR}/sm_results.db
 while getopts "h?:dc:r:s:t:" OPTION; do
@@ -24,11 +21,9 @@ while getopts "h?:dc:r:s:t:" OPTION; do
 	    ;;
 
 	h|\?)
-	    echo "specmatch_pipeline.sh obs [-d]" >&2
 	    exit 0
 	    ;;
 	:)
-	    echo "specmatch_pipeline.sh obs [-d]" >&2
 	    exit 0
 	    ;;
     esac
@@ -41,23 +36,21 @@ mkdir -p ${OUTPUTDIR}
 
 FITSFILE=$(echo ${STARNAME} | starname_to_pixfile.sh ${K2_CAMP})
 FITSFILE=${PROJDIR}/www/K2/pixel/${K2_CAMP}/${FITSFILE}
-PARDB=${K2PHOTFILES}/${K2_CAMP}_pars.sqlite
-RESULTSDB=${RUN_TPS_BASEDIR}/scrape.db
-RUN_PHOT_BASEDIR=${K2_ARCHIVE}/photometry/${RUN}/
-RUN_TPS_BASEDIR=${K2_ARCHIVE}/TPS/${RUN}/
+
 
 if [ -z "${DEBUG}" ]
 then
-    DB=scrape_debug.db
-else
     DB=scrape.db
+else
+    DB=scrape_debug.db
 fi
 
-RESULTSDB=${RUN_TPS_BASEDIR}/${DB}
-
+RUN_PHOT_BASEDIR=${K2_ARCHIVE}/photometry/${RUN}/
+RUN_TPS_BASEDIR=${K2_ARCHIVE}/TPS/${RUN}/
 STAR_PHOT_OUTDIR=${RUN_PHOT_BASEDIR}/output/${STARNAME}/
 STAR_TPS_OUTDIR=${RUN_TPS_BASEDIR}/output/${STARNAME}/
 STAR_GRIDFILE=${STAR_TPS_OUTDIR}/${STARNAME}.grid.h5
+RESULTSDB=${RUN_TPS_BASEDIR}/${DB}
 
 mkdir -p ${STAR_PHOT_OUTDIR}
 mkdir -p ${STAR_TPS_OUTDIR}
@@ -72,9 +65,9 @@ PARDB=${K2PHOTFILES}/${K2_CAMP}_pars.sqlite
 
 set -x
 pixel_decorrelation4.py ${PIXFILE} ${LCFILE} ${TRANSFILE} ${DEBUG}
-terraWrap.py pp ${LCFILE} ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
-terraWrap.py grid ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
-terraWrap.py dv ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
+terra pp ${LCFILE} ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
+terra grid ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
+terra dv ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
 
 echo "Saving results in ${RESULTSDB}"
 scrape_terra.py ${STAR_GRIDFILE} ${RESULTSDB}
