@@ -426,8 +426,6 @@ def read_photometry(path,mode='minses'):
     def condition_pixel_decorrelation2(lc):
         # Fill in missing cadences with nans
         # Super cludgy way of extracting the path campaign 
-        f = lambda x : os.path.split(x)[0]
-        k2_camp = os.path.basename(f(f(f(path)))).split('_')[0]
 
         lc['fmask'] = lc['fmask']!=False
         lc['f_not_normalized'] = lc['fdt_t_pos']
@@ -467,7 +465,7 @@ def read_photometry(path,mode='minses'):
         f = lambda x : os.path.split(x)[0]
         k2_camp = os.path.basename(f(f(f(path)))).split('_')[0]
         
-        
+        k2_camp = "C%i" % fits.open(f)[0].header['CAMPAIGN']
         lc = add_cadmask(lc,k2_camp)
         lc0 = load_lc0(k2_camp)
         
