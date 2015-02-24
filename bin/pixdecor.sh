@@ -64,7 +64,7 @@ echo ${PIXFILE}
 PARDB=${K2PHOTFILES}/${K2_CAMP}_pars.sqlite
 
 set -x
-pixel_decorrelation4.py ${PIXFILE} ${LCFILE} ${TRANSFILE} ${DEBUG}
+#pixel_decorrelation4.py ${PIXFILE} ${LCFILE} ${TRANSFILE} ${DEBUG}
 terra pp ${LCFILE} ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
 terra grid ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
 terra dv ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
