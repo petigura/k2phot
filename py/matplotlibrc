@@ -32,7 +32,7 @@
 #backend      : Agg
 #backend      : TkAgg
 #backend      : MacOSX
-#backend      : Agg
+backend      : Agg
 #backend      : GTKAgg
 #backend      : GTK
 
