@@ -26,17 +26,7 @@ case ${TYPE} in
 	mkdir -p ${OUTPUT}
 	echo ${STARS}
 	FILES=$(echo ${STARS} | tr " " "\n" | awk -v dir="${REMOTEDIR}/${RUN}/output/" '{print dir $1 }' | sed '/^$/d'  | tr "\n" " "  )
-#	echo ${FILES}
-
-	echo rsync -avh --progress dtn01:"'${FILES}'"  ${OUTPUT}/
-
-
-#	rsync -avh --progress dtn01:${REMOTEDIR}/${RUN}/scripts/ ${LOCALDIR}/${RUN}/
-#	rsync -vh --progress dtn01:${REMOTEDIR}/${RUN}/scrape.db ${LOCALDIR}/${RUN}/
-	;;
-
-    TPS*)
-	
+	eval `echo rsync -avh --progress dtn01:"'${FILES}'"  ${OUTPUT}/`
 	;;
 esac
 

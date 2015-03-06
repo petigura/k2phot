@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+module load k2
 
 module load k2
 
@@ -68,7 +69,7 @@ PARDB=${K2PHOTFILES}/${K2_CAMP}_pars.sqlite
 set -x
 #pixel_decorrelation4.py ${PIXFILE} ${LCFILE} ${TRANSFILE} ${DEBUG}
 terra pp ${LCFILE} ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
-terra grid ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
+python ${HOME}/Marcy/terra/bin/terra grid ${STAR_GRIDFILE} ${PARDB} ${STARNAME} ${DEBUG}
 terra dv ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
 
 echo "Saving results in ${RESULTSDB}"
