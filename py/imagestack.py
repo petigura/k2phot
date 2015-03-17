@@ -69,9 +69,22 @@ class ImageStack(object):
         return self.flux
 
     def get_frame(self,i):
-        locx,locy = self.ts.iloc[i]['locx locy'.split()]
         flux = self.get_flux()
-        ap_weights = self.ap_weights[i]
+
+        locx = None
+        locy = None
+        ap_weights = None
+        radius = None
+        try:
+            locx,locy = self.ts.iloc[i]['locx locy'.split()]
+        except:
+            print "locx,locy not set"
+
+        try:
+            ap_weights = self.ap_weights[i]
+        except:
+            print "ap_weights not set"
+
         frame = Frame(
             flux[i],locx=locx,locy=locy,r=self.radius,ap_weights=ap_weights)
         return frame
