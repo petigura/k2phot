@@ -33,6 +33,8 @@ import pixel_decorrelation2
 from pdplus import LittleEndian as LE
 from imagestack import ImageStack
 from pixel_decorrelation4 import read_imagestack,noisekey,noisename
+import sqlite3
+        
 
 def computeCentroids(data, edata, mask):
     """Compute centroid time series.
@@ -385,8 +387,6 @@ def plotLightCurves(time, flux, inTransit=None, fontsize=16, title='', fig=None,
     ax.minorticks_on()
     return fig, ax
 
-import sqlite3
-        
 def read_ephemeris(candfile,starname):
     """
     Read Ephemeris
@@ -460,7 +460,7 @@ def boxTransitModel(t,tpars):
 
 def plotDiagnostics( pixFile, lcFile, candfile, starname, s2n=-1,
                      fontsize=14, medFiltWid=47, tt=None, per=None, t14=None,
-                     empiricalErrors=False,debug=False):
+                     empiricalErrors=False, debug=False, outdir=None ):
     """
     Plot Diagnostics
     
@@ -528,6 +528,8 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname, s2n=-1,
     if debug:
         ncad = len(lc)
         lc = lc[: ncad/10 ]
+    if type(outdir)==type(None):
+        outdir = os.getcwd()
 
     # Load up pixel information
     # Pull tlimits from the light-curve file
@@ -546,11 +548,10 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname, s2n=-1,
 
     # Read in transit parameters from file.
     tpars = read_ephemeris(candfile,starname)
-    if s2n > 0:
-        if tpars['s2n'] < s2n:
-            print "s2n=%f lower than threshold=%f" %(tpars['s2n'],s2n )
-            print "exting"
-            return None
+    if (s2n > 0) & (tpars['s2n'] < s2n):
+        print "s2n=%f lower than threshold=%f" %(tpars['s2n'],s2n )
+        print "exting"
+        return None
 
     transitModel = boxTransitModel(time,tpars)
 
@@ -693,13 +694,11 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname, s2n=-1,
         )
     axs.append(ax9)
 
-    dirname = os.path.dirname(lcFile)
-
     def savefig(path):
         fig.savefig(path)
         print "Created %s" % path
         
-    pathpdf = os.path.join(dirname,"%s_dv.pdf" % args.starname)
+    pathpdf = os.path.join(outdir,"%s_dv.pdf" % args.starname)
     pathpng = pathpdf.replace('.pdf','.png')
 
     savefig(pathpdf)
@@ -709,8 +708,6 @@ def plotDiagnostics( pixFile, lcFile, candfile, starname, s2n=-1,
 #    fig, ax1014 = plotDIA_PRF_fit(
 #        pixFile, diffImage, e_diffImage, outImage, e_outImage, loc, ap_mask,
 #        ngrid=30, fontsize=fontsize*0.75, fig=fig, figpos=[0.6, 0, 0.4, 0.45])
-
-
 #    axs += ax1014
 
 
@@ -1593,18 +1590,19 @@ if __name__=='__main__':
     from argparse import ArgumentParser
 
     p = ArgumentParser()
-    p.add_argument('pixFile',type=str)
-    p.add_argument('lcFile',type=str)
-    p.add_argument('candfile',type=str)
-    p.add_argument('starname',type=str)
-    p.add_argument('--s2n',type=float,default=-1)
-    p.add_argument('--debug',type=int,default=0)
+    p.add_argument('pixFile', type=str)
+    p.add_argument('lcFile', type=str)
+    p.add_argument('candfile', type=str)
+    p.add_argument('starname', type=str)
+    p.add_argument('--s2n', type=float, default=-1)
+    p.add_argument('--debug', action="store_true", help='Run in debug mode')
+    p.add_argument(
+        '--outdir', type=str, help='Output directory to save dv plots'
+    )
     args = p.parse_args()
-
-    
     fig,axL = plotDiagnostics(
         args.pixFile, args.lcFile, args.candfile, args.starname, s2n=args.s2n,
-        debug=False
+        debug=args.debug, outdir=args.outdir
     )
 
 
