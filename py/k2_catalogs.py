@@ -32,47 +32,41 @@ k2cat_h5file = os.path.join(K2PHOTFILES,'catalogs/k2_catalogs.h5')
 MAST_CATALOGS = os.path.join(K2PHOT_DIR,'mast_catalogs/')
 
 
-def read_mast_cat(k2_camp):
+def read_mast_cat(k2_camp,debug=False):
     """
     Read catalogs using the formats specified in the MAST
     """
-    if k2_camp=='Ceng':
-        df = pd.read_csv('%s/catalogs/K2_E2_targets_lc.csv' % MAST_CATALOGS )
-        df = df.dropna()
-        namemap = dict([(c,c.strip()) for c in df.columns])
-        df = df.rename(columns=namemap)
-        df = df.rename(columns={
-            '#EPIC':'epic','Kp':'kepmag','list':'prog'})
-        df['prog'] = df.prog.str.slice(start=1)
-        ra = Longitude(df.ra*u.deg,180*u.deg)
-        ra.wrap_angle=180*u.deg
-        df['ra'] = ra.deg
-
-    else:
-        if k2_camp=='C0':
-            targetsfn = 'K2Campaign0targets.csv'
-            readmefn = 'README_d14108_01_epic_c0_dmc'
-            catalogfn = 'd14108_01_epic_c0_dmc.mrg' 
-        elif k2_camp=='C1':
-            targetsfn = 'K2Campaign1targets.csv'
-            readmefn = 'README_epic_field1_dmc'
-            catalogfn = 'd1435_02_epic_field1_dmc.mrg' 
-        
-        targetsfn = os.path.join(K2PHOT_DIR,'target_lists/',targetsfn)
-        readmefn = os.path.join(MAST_CATALOGS,readmefn)
-        catalogfn = os.path.join(MAST_CATALOGS,catalogfn)
-        
-
-        targets = pd.read_csv(targetsfn,usecols=[0])
-        targets = targets.rename(columns={'EPIC ID':'epic'})
-        targets['target'] = True
-        cat = pd.merge(cat, targets, how='left', on='epic')
-        cat['target'] = cat.target==True
-        cat.index = cat.epic
-
+    targets = read_target_list(k2_camp)
+    targets['target'] = True        
+    cat = read_epic(k2_camp, debug=debug)
+    cat = pd.merge(cat, targets, how='left', on='epic')
+    cat['target'] = cat.target==True
+    cat.index = cat.epic
     return cat
 
-def read_epic(k2_camp):
+
+def read_target_list(k2_camp):
+    if k2_camp=='C0':
+        targetsfn = 'K2Campaign0targets.csv'
+    elif k2_camp=='C1':
+        targetsfn = 'K2Campaign1targets.csv'
+    elif k2_camp=='C2':
+        targetsfn = 'K2Campaign2targets.csv'
+
+    targetsfn = os.path.join(K2PHOT_DIR,'target_lists/',targetsfn)
+
+    if (k2_camp=='C0') or (k2_camp=='C1'):
+        targets = pd.read_csv(targetsfn,usecols=[0])
+        targets = targets.rename(columns={'EPIC ID':'epic'})
+    elif (k2_camp=='C2'):
+        targets = pd.read_csv(targetsfn,usecols=[0],names=['epic'])
+
+    return targets
+
+def read_epic(k2_camp,debug=False):
+    if k2_camp=='C2':
+        readmefn = 'README_d1497_01_epic_c23_dmc'
+        catalogfn = 'd1497_01_epic_c23_dmc.mrg.gz' 
     if k2_camp=='C6':
         readmefn = "README_d14260_01_epic_c6_dmc"
         catalogfn = "d14260_01_epic_c6_dmc.mrg.gz"
@@ -100,9 +94,15 @@ def read_epic(k2_camp):
     cut = cut.sort('col')
     usecols = cut.col-1
 
+    print "reading gzipped catalog (may take some time)"
+    if debug:
+        nrows = 1000
+    else:
+        nrows = None
+
     cat = pd.read_table(
         catalogfn, sep='|', names=cut.newname, header=None, usecols=usecols,
-        compression='gzip'
+        compression='gzip', nrows=nrows
         )
 
     return cat

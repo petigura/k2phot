@@ -23,14 +23,18 @@ class Frame(np.ndarray):
         # see InfoArray.__array_finalize__ for comments
         if obj is None: return
 
-    def plot(self):
+    def plot(self,scale='log'):
         apertures = CircularAperture([self.locx,self.locy], r=self.r)
-        logflux = np.log10(self)
-        logflux = ma.masked_invalid(logflux)
-        logflux.mask = logflux.mask | (logflux < 0)
-        logflux.fill_value = 0
-        logflux = logflux.filled()
-        imshow2(logflux)
+
+        z = self
+        if scale=='log':
+            z = np.log10(self)
+            z = ma.masked_invalid(z)
+            z.mask = z.mask | (z < 0)
+            z.fill_value = 0
+            z = z.filled()
+
+        imshow2(z)
 
         if self.pixels is not None:
             for i,pos in enumerate(self.pixels):
