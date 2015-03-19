@@ -366,7 +366,8 @@ def load_lc0(k2_camp):
         lc0 = 'pixel/C0/ktwo200000818-c00_lpd-targ.fits'
     if k2_camp=='C1':
         lc0 = 'pixel/C1/ktwo201367065-c01_lpd-targ.fits'
-
+    if k2_camp=='C2':
+        lc0 = 'pixel/C2/ktwo200001126-c02_lpd-targ.fits'
 
     K2_ARCHIVE=os.environ['K2_ARCHIVE']
     lc0 = os.path.join(K2_ARCHIVE,lc0)
@@ -461,7 +462,7 @@ def read_photometry(path,mode='minses'):
         lc['f'] -= 1
 
         k2_camp = "C%i" % fits.open(path)[0].header['CAMPAIGN']        
-        lc = add_cadmask(lc,k2_camp)
+#        lc = add_cadmask(lc,k2_camp)
         lc0 = load_lc0(k2_camp)
         
         lc = pd.merge(

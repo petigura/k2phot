@@ -2,8 +2,29 @@ from astropy.io import fits
 import numpy as np
 from numpy import ma
 import tools
-
+import pandas as pd
 bjd0 = 2454833
+
+
+bitdesc = {
+    1 : "Attitude Tweak",
+    2 : "Safe Mode",
+    3 : "Spacecraft is in Coarse Point",
+    4 : "Spacecraft is in Earth Point",
+    5 : "Reaction wheel zero crossing",
+    6 : "Reaction Wheel Desaturation Event",
+    7 : "Argabrightening detected across multiple channels",
+    8 : "Cosmic Ray in Optimal Aperture pixel",
+    9 : "Manual Exclude. The cadence was excluded because of an anomaly.",
+    10 : "Reserved",
+    11 : "Discontinuity corrected between this cadence and the following one",
+    12 : "Impulsive outlier removed after cotrending",
+    13 : "Argabrightening event on specified CCD mod/out detected",
+    14 : "Cosmic Ray detected on collateral pixel row or column in optimal aperture",
+    15 : "LDE parity error triggers a flag"
+}
+
+bitdesc  = pd.Series(bitdesc)
 
 def loadPixelFile(fn, tlimits=None, bjd0=2454833):
     """
@@ -36,25 +57,59 @@ def loadPixelFile(fn, tlimits=None, bjd0=2454833):
         if maxtime is None:
             maxtime = np.inf
 
+
+
     f = fits.open(fn)
     cube = f[1].data
+    ncad = len(cube)
+    qdf = parse_bits(cube['quality'])
+    sqdf = qdf.sum() # Compute the sum total of quality bits
+    sqdf = pd.concat([sqdf,bitdesc],axis=1)
+    sqdf.index.name = "bit"
+    sqdf = sqdf.rename(columns={0:"Num cadences bit is on",1:"Bit description"})
+    rembits = [1,2,3,4,5,6,7,8,9,11]
+    print sqdf 
 
+    bqual = np.array(qdf[rembits].sum(axis=1)==0)
+    print "Removing %i cadences due to quality flag" % (ncad - np.sum(bqual)) 
+    
     # Because masks are not always rectangles, we have to deal with nans.
     flux0 = ma.masked_invalid(cube['flux'])
     flux0 = flux0.sum(2).sum(1)
+    bfinite = np.array(np.isfinite(flux0))
+    print "Removing %i cadences due nans" % (ncad - np.sum(bfinite)) 
+    
+    btime = (cube['time'] > mintime) & (cube['time'] < maxtime)
+    print "Removing %i cadences due to time limits" % (ncad - np.sum(btime)) 
 
-    index = (cube['quality']==0) & np.isfinite(flux0) \
-            & (cube['time'] > mintime) & (cube['time'] < maxtime) 
+    b = bqual & bfinite & btime
+    print "Removing %i cadences total" % (ncad - np.sum(b)) 
 
-    cube = cube[index]
+    assert type(b)==type(np.ones(0)),"Boolean mask must be array"
+    cube = cube[b]
+
     cube['time'][:] = cube['time'] + bjd0
-
     ret = (cube,) + ([tools.headerToDict(el.header) for el in f],)
-        
+
     f.close()
     return ret
 
+def parse_bits(quality):
+    """
+    Takes quality area and splits the bits up
+    """
 
+    # Integer version of quality
+    nbits = 32
+    fmtstr = '0%ib' % nbits
+    
+    # Collection of lists. One element for each bin
+    sbqual = map(lambda x : list(format(x,fmtstr)  ),quality)
+    nbitssave = 16
+    df = pd.DataFrame(sbqual,columns=list(np.arange(nbits,0,-1)))
+    df = df[range(1,nbitssave+1)]
+    df = df.convert_objects(convert_numeric=True)
+    return df 
 
 def loadPRF(**kw):
     """Load a Kepler PRF appropriate for the specified location.

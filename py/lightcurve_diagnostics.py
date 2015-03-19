@@ -1600,7 +1600,7 @@ if __name__=='__main__':
         '--outdir', type=str, help='Output directory to save dv plots'
     )
     args = p.parse_args()
-    fig,axL = plotDiagnostics(
+    plotDiagnostics(
         args.pixFile, args.lcFile, args.candfile, args.starname, s2n=args.s2n,
         debug=args.debug, outdir=args.outdir
     )

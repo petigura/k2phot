@@ -351,6 +351,7 @@ def detrend_roll_seg(lc,plot_diag=False,verbose=False):
     if laststop - laststart < 250:
         segments = segments.iloc[:-1]
     segments.loc[segments.index[-1],'stop'] = laststop
+
     nseg = len(segments)
     if verbose:
         print "breaking up light curve into following %i segments " % nseg
@@ -512,6 +513,7 @@ def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np
     # Load up transformation information
     trans,pnts = channel_centroids.read_channel_centroids(transfile)
     trans['roll'] = trans['theta'] * 2e5
+
 
     # Merge transformation info with the rest of the light curve
     pnts = pd.DataFrame(pnts[0]['cad'.split()])
