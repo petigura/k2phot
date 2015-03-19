@@ -3,6 +3,8 @@
 # Use function to pull the following files. Stored on NERSC
 # pixel, photometry, TPS,
 # pull_nersc.sh <type> <k2_camp> <run>  <<< starnames
+# Example useage
+# cat C2_diag120.txt | tr '\n' ' ' | pull_nersc.sh pixel C2 C2 
 
 STARS=$(cat)
 
