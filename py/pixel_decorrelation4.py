@@ -460,8 +460,8 @@ def detrend_t_roll_2D(lc):
     lc['fdt_t_rollmed'] = lc[fdtkey] + mu
     return lc
 
-def read_imagestack(pixfile,tlimits=[-np.inf,np.inf]):
-    im = ImageStack(pixfile,tlimits=tlimits)
+def read_imagestack(pixfile,tlimits=[-np.inf,np.inf],tex=None):
+    im = ImageStack(pixfile,tlimits=tlimits,tex=tex)
     im.ts['fbg'] = im.get_fbackground()
     im.flux -= im.ts['fbg'][:,np.newaxis,np.newaxis]
     wcs = get_wcs(im.fn)
@@ -472,7 +472,7 @@ def read_imagestack(pixfile,tlimits=[-np.inf,np.inf]):
     return im,x,y
 
 
-def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np.inf]):
+def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np.inf],tex=None):
     """
     Run the pixel decorrelation on pixel file
     """
@@ -507,7 +507,7 @@ def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np
     basename = os.path.splitext(lcfile)[0]
     starname = os.path.basename(basename)
 
-    im,x,y = read_imagestack(pixfile,tlimits=tlimits)
+    im,x,y = read_imagestack(pixfile,tlimits=tlimits,tex=tex)
     lc = im.ts # This is a skeleton light curve
 
     # Load up transformation information
@@ -711,12 +711,27 @@ if __name__ == "__main__":
     p.add_argument('lcfile',type=str)
     p.add_argument('transfile',type=str)
     p.add_argument('--debug',action='store_true',help='run in debug mode?')
-    p.add_argument('--tmin', type=float, default=-np.inf,help='Minimum valid time index',)
-    p.add_argument('--tmax', type=float, default=np.inf,help='Max time')
+    p.add_argument(
+        '--tmin', type=float, default=-np.inf,help='Minimum valid time index'
+    )
+    p.add_argument(
+        '--tmax', type=float, default=np.inf,help='Max time'
+    )
+
+    p.add_argument(
+        '--tex', type=str, default=None,help='Exclude time range'
+    )
+
+    
     args  = p.parse_args()
+
+    tex = args.tex
+    if type(args.tex)!=type(None):
+        tex = eval("np.array(%s)" % tex)
+
     tlimits = [args.tmin,args.tmax]
 
     pixel_decorrelation(
         args.pixfile,args.lcfile,args.transfile,debug=args.debug,
-        tlimits=tlimits
+        tlimits=tlimits, tex = tex
         )

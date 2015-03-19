@@ -386,11 +386,14 @@ def get_cadmask(k2_camp):
         cadmaskfile = 'C0_fmask.csv'
     if k2_camp=='C1':
         cadmaskfile = 'C1_fmask.csv'
+    if k2_camp=='C2':
+        cadmaskfile = 'C2_fmask.csv'
+
     cadmaskfile = os.path.join(K2PHOTFILES,cadmaskfile)
 
-    if k2_camp=='C0':
+    if (k2_camp=='C0') or (k2_camp=='C2'):
         cadmask = pd.read_csv(cadmaskfile,index_col=0)
-    if k2_camp=='C1':
+    if (k2_camp=='C1'):
         cadmask = pd.read_csv(cadmaskfile,index_col=0)
         cadmask.index=cadmask.cad
         cadmask = cadmask.drop(['cad'],axis=1)
@@ -462,7 +465,7 @@ def read_photometry(path,mode='minses'):
         lc['f'] -= 1
 
         k2_camp = "C%i" % fits.open(path)[0].header['CAMPAIGN']        
-#        lc = add_cadmask(lc,k2_camp)
+        lc = add_cadmask(lc,k2_camp)
         lc0 = load_lc0(k2_camp)
         
         lc = pd.merge(

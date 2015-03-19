@@ -5,8 +5,8 @@ import numpy as np
 from frame import Frame
 from numpy import ma
 class ImageStack(object):
-    def __init__(self,fn,tlimits=[-np.inf,-np.inf]):
-        cube,headers = loadPixelFile(fn,tlimits=tlimits)
+    def __init__(self,fn,tlimits=[-np.inf,-np.inf],tex=None):
+        cube,headers = loadPixelFile(fn,tlimits=tlimits,tex=tex)
         self.fn = fn
         self.headers = headers
         self.flux = cube['FLUX'].astype(float)

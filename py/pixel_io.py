@@ -26,7 +26,7 @@ bitdesc = {
 
 bitdesc  = pd.Series(bitdesc)
 
-def loadPixelFile(fn, tlimits=None, bjd0=2454833):
+def loadPixelFile(fn, tlimits=None, bjd0=2454833, tex=None):
     """
     Convert a Kepler Pixel-data file into time, flux, and error on flux.
 
@@ -57,8 +57,6 @@ def loadPixelFile(fn, tlimits=None, bjd0=2454833):
         if maxtime is None:
             maxtime = np.inf
 
-
-
     f = fits.open(fn)
     cube = f[1].data
     ncad = len(cube)
@@ -80,6 +78,12 @@ def loadPixelFile(fn, tlimits=None, bjd0=2454833):
     print "Removing %i cadences due nans" % (ncad - np.sum(bfinite)) 
     
     btime = (cube['time'] > mintime) & (cube['time'] < maxtime)
+    if type(tex)!=type(None):
+        for rng in tex:
+            # Include regions that are outside of time range
+            brng = (cube['time'] < rng[0]) | (cube['time'] > rng[1])
+            btime = btime & brng
+
     print "Removing %i cadences due to time limits" % (ncad - np.sum(btime)) 
 
     b = bqual & bfinite & btime
