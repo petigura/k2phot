@@ -171,7 +171,7 @@ def background_mask(cad,fbg,plot=False):
         s = slice(i,i+size)
         bgmask[s] = True
         
-    print "bgmask=True for %i of %i cadences" % (bgmask.sum(),bmask.size)
+    print "bgmask=True for %i of %i cadences" % (bgmask.sum(),bgmask.size)
 
     if plot:
         plt.plot(cad,fbg)
