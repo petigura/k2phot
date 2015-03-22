@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
+echo "pixdecor.sh started: " $(date) 
 module load k2
-
 DEBUG=
 DBFILE=${SM_PROJDIR}/sm_results.db
 while getopts "h?:dc:r:s:t:e:" OPTION; do
@@ -68,14 +68,13 @@ PARDB=${K2PHOTFILES}/${K2_CAMP}_pars.sqlite
 
 set -x
 echo $TEX
-#pixel_decorrelation4.py ${PIXFILE} ${LCFILE} ${TRANSFILE} ${DEBUG} --tex="${TEX}"
-
-#terra pp ${LCFILE} ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
-#terra grid ${STAR_GRIDFILE} ${PARDB} ${STARNAME} ${DEBUG}
-#terra dv ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
+pixel_decorrelation4.py ${PIXFILE} ${LCFILE} ${TRANSFILE} ${DEBUG} --tex="${TEX}"
+terra pp ${LCFILE} ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
+terra grid ${STAR_GRIDFILE} ${PARDB} ${STARNAME} ${DEBUG}
+terra dv ${STAR_GRIDFILE} ${PARDB} ${STARNAME}
 
 echo "Saving results in ${RESULTSDB}"
-#scrape_terra.py ${STAR_GRIDFILE} ${RESULTSDB}
+scrape_terra.py ${STAR_GRIDFILE} ${RESULTSDB}
 python  ${K2PHOT_DIR}/code/py/lightcurve_diagnostics.py ${PIXFILE} ${LCFILE} ${RESULTSDB} ${STARNAME} --s2n=8 --outdir=${STAR_TPS_OUTDIR} ${DEBUG}
 
 set +x

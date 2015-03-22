@@ -23,6 +23,8 @@ import flatfield
 from astropy.io import fits
 import contextlib
 
+os.system('echo "pixel_decorrelation4 modules loaded:" $(date) ')
+
 noisekey = 'fdt_t_roll_2D' # Column to use to compute noise
 noisename = 'mad_6_cad_mtd' # Noise metric to use for optimal aperture
 outfmt = dict(marker='o',mew=0,mfc='r',alpha=0.5,lw=0,zorder=0,ms=8)
