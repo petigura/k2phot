@@ -26,7 +26,8 @@ class Frame(np.ndarray):
     def plot(self,scale='log'):
         apertures = CircularAperture([self.locx,self.locy], r=self.r)
 
-        z = self
+        z = self.copy()
+        z -= np.nanmedian(z)
         if scale=='log':
             z = np.log10(self)
             z = ma.masked_invalid(z)
@@ -40,6 +41,7 @@ class Frame(np.ndarray):
             for i,pos in enumerate(self.pixels):
                 r,c = pos
                 plt.text(c,r,i,va='center',ha='center',color='Orange')
+
         apertures.plot(color='Lime',lw=1.5,alpha=0.5)
         plt.xlabel('Column (pixels)')
         plt.ylabel('Row (pixels)')

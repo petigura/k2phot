@@ -14,8 +14,7 @@ import matplotlib.gridspec as gridspec
 import george
 from george import kernels
 
-from imagestack import ImageStack
-from pixel_decorrelation import get_wcs
+from imagestack import ImageStack,read_imagestack
 import channel_centroids
 from pixel_io import bjd0
 from ses import ses_stats
@@ -133,6 +132,7 @@ def plot_detrend(t,f,ftnd,fdt,fses,fdtses):
     plt.sca(axL[0])
     plt.plot(t,f,label='Flux SES = %i' % fses)
     plt.plot(t,ftnd,label='Fit')
+
     plt.ylabel('Flux')
     plt.legend(**legkw)
     plt.sca(axL[1])
@@ -153,7 +153,7 @@ class Lightcurve(pd.DataFrame):
         dfses = ses_stats(fm)
         return dfses
 
-    def plot_detrend(self,columns):
+    def plot_detrend(self,columns,ocolumns=[]):
         """
         Parameters
         ----------
@@ -460,18 +460,6 @@ def detrend_t_roll_2D(lc):
     lc['fdt_t_rollmed'] = lc[fdtkey] + mu
     return lc
 
-def read_imagestack(pixfile,tlimits=[-np.inf,np.inf],tex=None):
-    im = ImageStack(pixfile,tlimits=tlimits,tex=tex)
-    im.ts['fbg'] = im.get_fbackground()
-    im.flux -= im.ts['fbg'][:,np.newaxis,np.newaxis]
-    wcs = get_wcs(im.fn)
-    ra,dec = im.headers[0]['RA_OBJ'],im.headers[0]['DEC_OBJ']
-    x,y = wcs.wcs_world2pix(ra,dec,0)
-    x = float(x)
-    y = float(y)
-    return im,x,y
-
-
 def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np.inf],tex=None):
     """
     Run the pixel decorrelation on pixel file
@@ -514,7 +502,6 @@ def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np
     trans,pnts = channel_centroids.read_channel_centroids(transfile)
     trans['roll'] = trans['theta'] * 2e5
 
-
     # Merge transformation info with the rest of the light curve
     pnts = pd.DataFrame(pnts[0]['cad'.split()])
     trans = pd.concat([trans,pnts],axis=1)
@@ -532,7 +519,7 @@ def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np
     norm = Normalizer(lc['fsap'].median())
     lc['f'] = norm.norm(lc['fsap'])
     f0 = np.array(lc['f'].copy())
-    lc['fmask'] = lc['f'].isnull() | lc['thrustermask']
+    lc['fmask'] = lc['f'].isnull() | lc['thrustermask'] | lc['bgmask']
     lc['fdtmask'] = lc['fmask'].copy()
 
     lc = detrend_t(lc,plot_diag=False) 
@@ -617,6 +604,8 @@ mad_1_cad_mean=%.1f
         # Add title and stars
         im.radius = dmin['r']
         fr = im.get_medframe()
+        fr -= np.median(lc['fbg'])
+
         epic = fits.open(pixfile)[0].header['KEPLERID']
         fr.plot()
         fr.plot_label(pixfile,epic)
