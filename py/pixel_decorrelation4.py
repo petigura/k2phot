@@ -659,7 +659,7 @@ def to_fits(pixfile,fitsfile,lc,dfaper):
     coldefs = [
         ["thrustermask","L","Thruster fire","bool"],
         ["roll","D","Roll angle","arcsec"],
-        ["cad","J","Unique candence number","int"],
+        ["cad","J","Unique cadence number","int"],
         ["t","D","Time","BJD - %i" % bjd0],
         ["fbg","D","Background flux","electrons per second per pixel"],
         ["fsap","D","Simple aperture photometry","electrons per second"],
