@@ -1,10 +1,20 @@
 #!/usr/bin/env bash 
 
-# Use function to pull the following files. Stored on NERSC
-# pixel, photometry, TPS,
-# pull_nersc.sh <type> <k2_camp> <run>  <<< starnames
-# Example useage
-# cat C2_diag120.txt | tr '\n' ' ' | pull_nersc.sh pixel C2 C2 
+
+while getopts "h?:dc:r:s:t:e:" OPTION; do
+    case $OPTION in
+	h|\?)
+	    echo "Use function to pull the following files. Stored on NERSC"
+	    echo "pixel, photometry, TPS,"
+	    echo "pull_nersc.sh <type> <k2_camp> <run>  <<< starnames"
+	    echo "Example useage"
+	    echo "cat C2_diag120.txt | tr '\n' ' ' | pull_nersc.sh pixel C2 C2"
+	    echo "cat C2_diag120.txt | tr '\n' ' ' | pull_nersc.sh photometry C2 C2_03-21"
+	    exit 0
+	    ;;
+    esac
+done
+
 
 STARS=$(cat)
 
