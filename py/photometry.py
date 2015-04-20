@@ -15,11 +15,9 @@ from pdplus import LittleEndian as LE
 from astropy.stats import median_absolute_deviation as mad
 import h5py
 
-import k2_catalogs
 import glob
 from pdplus import LittleEndian as LE
 import cPickle as pickle
-from pixel_decorrelation import baseObject
 from pixel_io import bjd0 
 
 
@@ -258,30 +256,6 @@ def r2fm(r,field):
     return ma.masked_array(r[field],r['fmask'])
 
 
-
-def phot_vs_kepmag(df0,plot_diag=False):
-    cat = k2_catalogs.read_cat()
-    cat['epic'] = cat.epic.astype(str)
-
-    df = df0.copy()
-    
-    df = pd.merge(
-        df,cat['epic kepmag'.split()],left_on='starname',right_on='epic')
-
-    df['logfmed'] = np.log10(df['f_not_normalized_med'])
-
-    p0 = [-1,14]
-    obj = lambda p : np.sum(abs(df.logfmed - polyval(p,df.kepmag)))
-    p1 = optimize.fmin(obj,p0,disp=0)
-    df['logfmed_fit'] = np.polyval(p1,df['kepmag'])
-
-    if plot_diag:
-        plot(df.kepmag,df.logfmed,'.')
-        kepmagi = linspace(9,20,100)
-        plot(kepmagi,polyval(p1,kepmagi),lw=2)
-        setp(gca(),xlabel='Kepmag',ylabel='Flux')
-    return df
-
 def Ceng2C0(lc0):
     """
     Simple script that turns the engineering data into C0 lenght data
@@ -354,8 +328,6 @@ def read_photometry_crossfield(path,k2_camp='C0'):
     lc = np.array(lc.to_records(index=False))
     return lc 
 
-dfmaskpath = os.path.join(os.environ['K2PHOTFILES'],'C0_fmask_theta.h5')
-dfmask = pd.read_hdf(dfmaskpath,'dfmask')
 
 from subprocess import Popen,PIPE
 
@@ -379,25 +351,6 @@ def load_lc0(k2_camp):
     return lc0
 
  
-K2PHOTFILES = os.environ['K2PHOTFILES']
-
-def get_cadmask(k2_camp):
-    if k2_camp=='C0':
-        cadmaskfile = 'C0_fmask.csv'
-    if k2_camp=='C1':
-        cadmaskfile = 'C1_fmask.csv'
-    if k2_camp=='C2':
-        cadmaskfile = 'C2_fmask.csv'
-
-    cadmaskfile = os.path.join(K2PHOTFILES,cadmaskfile)
-
-    if (k2_camp=='C0') or (k2_camp=='C2'):
-        cadmask = pd.read_csv(cadmaskfile,index_col=0)
-    if (k2_camp=='C1'):
-        cadmask = pd.read_csv(cadmaskfile,index_col=0)
-        cadmask.index=cadmask.cad
-        cadmask = cadmask.drop(['cad'],axis=1)
-    return cadmask
         
 def add_cadmask(lc,k2_camp):
     """
@@ -465,14 +418,7 @@ def read_photometry(path,mode='minses'):
         lc['f'] -= 1
 
         k2_camp = "C%i" % fits.open(path)[0].header['CAMPAIGN']        
-        lc = add_cadmask(lc,k2_camp)
-        lc0 = load_lc0(k2_camp)
         
-        lc = pd.merge(
-            lc0['cad t'.split()],
-            lc.drop('t',axis=1),on='cad',how='left'
-            )
-
         cad_start = lc.iloc[0]['cad']
         cad_stop = lc.iloc[-1]['cad']
         t_start = lc.iloc[0]['t']

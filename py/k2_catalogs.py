@@ -15,7 +15,6 @@ Example catalogues are found at
 
 import os
 import pandas as pd
-k2_dir = os.environ['K2_DIR']
 from astropy import units as u
 from astropy.coordinates import Longitude,Latitude
 from astropy.io import fits
