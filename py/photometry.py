@@ -418,7 +418,6 @@ def read_photometry(path,mode='minses'):
         lc['f'] /= median(lc['f'])
         lc['f'] -= 1
 
-        import pdb;pdb.set_trace()
         k2_camp = "C%i" % fits.open(path)[0].header['CAMPAIGN']        
         lc0 = load_lc0(k2_camp)
         
