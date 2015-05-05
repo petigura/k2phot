@@ -1,27 +1,28 @@
 """
-Pulls in relavent info from SpecMatch h5 files and shoves them into a database.
+Pulls in relavent info from k2 pixel files and shoves it in to a
+sqlite3 database
 """
-
-# If table doesn't exist yet, create it.
+import sys
 import sqlite3
 import glob
-from argparse import ArgumentParser
 import os
+
 from astropy.io import fits
 
-K2PHOT_DIR=os.environ['K2PHOT_DIR']
+K2PHOT_DIR = os.environ['K2PHOT_DIR']
+SCHEMAFILE = os.path.join(K2PHOT_DIR,'sql/headers_schema.sql')
 
-def scrape_headers_to_db(fitsfile,dbfile):
+def scrape_header_to_db(fitsfile,dbfile):
     if not os.path.isfile(dbfile):
-        schemafile = os.path.join(K2PHOT_DIR,'code/sql/headers_schema.sql')
-        with open(schemafile) as f:
+        with open(SCHEMAFILE) as f:
             schema = f.read()
 
-        con = sqlite3.connect(args.dbfile)
+        con = sqlite3.connect(dbfile)
         with con:
             cur = con.cursor()
             cur.execute(schema)            
         con.close() 
+
     with fits.open(fitsfile) as hduL:
         cols_h0 = 'KEPLERID OBJECT CHANNEL MODULE OUTPUT CAMPAIGN'.split() 
         cols_h1 = 'NAXIS NAXIS1 NAXIS2 TDIM4 1CRV4P 2CRV4P'.split()       
@@ -52,18 +53,23 @@ def scrape_headers_to_db(fitsfile,dbfile):
         cur.execute(query,outd)            
     con.close() 
 
-if __name__=="__main__":
-    p = ArgumentParser(description="Scrape info from fits headers")
-    p.add_argument('fitsfile',type=str,nargs='+',help='files to process')
-    p.add_argument('dbfile',type=str,help='sqlite3 database')
+def scrape_headers_to_db(fitsfiles,dbfile):
+    """
+    Same as scrape_header_to_db but can handle multiple files
+    """
 
-    args  = p.parse_args()
-    
-    for i,fitsfile in enumerate(args.fitsfile):
+    print "Scraping header info from the following files:" 
+    print fitsfiles
+    print "into"
+    print dbfile
+
+    for i,fitsfile in enumerate(fitsfiles):
         try:
-            scrape_headers_to_db(fitsfile,args.dbfile)
+            scrape_header_to_db(fitsfile,dbfile)
         except:
+            print sys.exc_info()
             pass
 
         if i%10==0:
             print i
+

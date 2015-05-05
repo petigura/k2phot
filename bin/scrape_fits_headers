@@ -1,0 +1,10 @@
+#!/usr/bin/env python
+from argparse import ArgumentParser
+from k2phot.io.scrape_fits_headers import scrape_headers_to_db
+
+if __name__=="__main__":
+    p = ArgumentParser(description="Scrape info from fits headers")
+    p.add_argument('fitsfiles',type=str,nargs='+',help='files to process')
+    p.add_argument('dbfile',type=str,help='sqlite3 database')
+    args  = p.parse_args()
+    scrape_headers_to_db(args.fitsfiles,args.dbfile)
