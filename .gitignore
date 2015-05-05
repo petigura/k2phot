@@ -1,0 +1,4 @@
+*.pyc
+mast_catalogs/
+target_lists/
+k2photfiles/
