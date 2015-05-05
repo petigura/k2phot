@@ -342,8 +342,8 @@ def load_lc0(k2_camp):
     if k2_camp=='C2':
         lc0 = os.path.join(module_dir,'lightcurves/C2/ktwo203983242-c02_lpd-targ.fits')
 
-    K2_ARCHIVE=os.environ['K2_ARCHIVE']
-    lc0 = os.path.join(K2_ARCHIVE,lc0)
+#    K2_ARCHIVE=os.environ['K2_ARCHIVE']
+#    lc0 = os.path.join(K2_ARCHIVE,lc0)
     ts, _, _, _, _, _ = read_k2_fits(lc0)
     ts = LE(ts)
     namemap={'TIME':'t','CADENCENO':'cad'}
