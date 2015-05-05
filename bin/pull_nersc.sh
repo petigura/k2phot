@@ -36,9 +36,9 @@ case ${TYPE} in
     photometry|TPS)
 	OUTPUT=${LOCALDIR}/${RUN}/output/
 	mkdir -p ${OUTPUT}
-	echo ${STARS}
 	FILES=$(echo ${STARS} | tr " " "\n" | awk -v dir="${REMOTEDIR}/${RUN}/output/" '{print dir $1 }' | sed '/^$/d'  | tr "\n" " "  )
-	eval `echo rsync -avh --progress dtn01:"'${FILES}'"  ${OUTPUT}/`
+	set -x
+	eval `echo rsync -avh --progress dtn01:"'${FILES}'"  ${OUTPUT}/ --exclude='*.png' --exclude='*.pdf'`
 	;;
 esac
 

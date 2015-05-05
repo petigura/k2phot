@@ -27,7 +27,6 @@ K2PHOT_DIR = os.environ['K2PHOT_DIR']
 
 k2cat_sqlfile = os.path.join(K2PHOTFILES,'catalogs/k2_catalogs.sqlite')
 k2cat_h5file = os.path.join(K2PHOTFILES,'catalogs/k2_catalogs.h5')
-
 MAST_CATALOGS = os.path.join(K2PHOT_DIR,'mast_catalogs/')
 
 
@@ -106,7 +105,6 @@ def read_epic(k2_camp,debug=False):
 
     return cat
 
-    
 def read_cat(k2_camp,return_targets=True):
     """
     Read catalog
@@ -122,9 +120,6 @@ def read_cat(k2_camp,return_targets=True):
         cat = cat[cat.target]
 
     return cat
-
-
-
 
 def read_diag(k2_camp,nbin=20):
     """
@@ -160,8 +155,6 @@ def read_diag(k2_camp,nbin=20):
 
     dfdiag = pd.concat(dfdiag)
     return dfdiag
-
-
 
 def makePixelFileURL(epic, cycle, mode='K2'):
     """Generate the URL for a particular target. 

@@ -140,13 +140,23 @@ def kepmag_to_flux(kepmag):
     return fkep
 
 def total_precision_theory(kepmag,Na):  
-    """
-    Calculate the expected precsion. I used the equation listed here:
+    """Calculate the expected precsion. I used the equation listed here:
 
     http://keplergo.arc.nasa.gov/CalibrationSN.shtml
 
     Note that to get the same values listed on the website, multiply
     by their fudge factor of 1.2.
+
+    There are different metrics of noise. In the limit of gaussian
+    noise, with point-to-point rms = 1.0
+    
+    twd = number of candences used in running box.
+
+    rms_1_cad_mean = 1.0
+    rms_1_cad_mtd = sqrt(3/2) = 1.225 (extra noise from measuring the
+                                       depths of the wings)
+    rms_4_cad_mean = 0.500007 divide by sqrt(twd)
+    mad_1_cad_mean = 0.674639 to convert from rms to mad divide by 1.5
 
     """
     Nfr = 270 # Number of frames used in exposure (loncadence) 

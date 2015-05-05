@@ -331,15 +331,16 @@ def read_photometry_crossfield(path,k2_camp='C0'):
 
 from subprocess import Popen,PIPE
 
-
+import os
 
 def load_lc0(k2_camp):
+    module_dir = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     if k2_camp=='C0':
         lc0 = 'pixel/C0/ktwo200000818-c00_lpd-targ.fits'
     if k2_camp=='C1':
-        lc0 = 'pixel/C1/ktwo201367065-c01_lpd-targ.fits'
+        lc0 = os.path.join(module_dir,'lightcurves/C1/ktwo201367065-c01_lpd-targ.fits')
     if k2_camp=='C2':
-        lc0 = 'pixel/C2/ktwo200001126-c02_lpd-targ.fits'
+        lc0 = os.path.join(module_dir,'lightcurves/C2/ktwo203983242-c02_lpd-targ.fits')
 
     K2_ARCHIVE=os.environ['K2_ARCHIVE']
     lc0 = os.path.join(K2_ARCHIVE,lc0)
@@ -418,6 +419,13 @@ def read_photometry(path,mode='minses'):
         lc['f'] -= 1
 
         k2_camp = "C%i" % fits.open(path)[0].header['CAMPAIGN']        
+        lc0 = load_lc0(k2_camp)
+        
+        lc = pd.merge(
+            lc0['cad t'.split()],
+            lc.drop('t',axis=1),on='cad',how='left'
+            )
+
         
         cad_start = lc.iloc[0]['cad']
         cad_stop = lc.iloc[-1]['cad']
@@ -433,11 +441,11 @@ def read_photometry(path,mode='minses'):
         lc['thrustermask'] = lc['thrustermask']!=False        
         return lc
 
-
     print "reading in %s" %path
     if path.count('.fits') > 0:
-        hduL = fits.open(path)
-        lc = LE(hduL[1].data)
+        with fits.open(path) as hduL:
+            lc = LE(hduL[1].data)
+
         lc = pd.DataFrame(lc)
         lc = condition_pixel_decorrelation4(lc)
 
@@ -485,3 +493,5 @@ def read_photometry(path,mode='minses'):
 
     print "lc.size " + str(lc.size)
     return lc
+
+
