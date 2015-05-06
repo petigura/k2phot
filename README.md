@@ -65,9 +65,19 @@ Tested with Python v2.7.3, 2.7.6, 2.7.8
 
 
 
-# Tests
-scrape_fits_headers ktwo201222515-c01_lpd-targ.fits ktwo201223635-c01_lpd-targ.fits ktwo201226808-c01_lpd-targ.fits ktwo201227422-c01_lpd-targ.fits ktwo201228585-c01_lpd-targ.fits ktwo201230523-c01_lpd-targ.fits ktwo201233437-c01_lpd-targ.fits ktwo201233864-c01_lpd-targ.fits ktwo201234630-c01_lpd-targ.fits ktwo201234711-c01_lpd-targ.fits ktwo201235266-c01_lpd-targ.fits ${K2PHOTFILES}/test_C1_headers.db
+## Tests ##
 
+# scrape_fits_headers #
+
+A small test to verify that the `scrape_fits_headers` code is working
+
+DBFILE=${K2PHOTFILES}/test_C1_headers.db
+scrape_fits_headers ktwo201222515-c01_lpd-targ.fits ktwo201223635-c01_lpd-targ.fits ktwo201226808-c01_lpd-targ.fits ktwo201227422-c01_lpd-targ.fits ktwo201228585-c01_lpd-targ.fits ktwo201230523-c01_lpd-targ.fits ktwo201233437-c01_lpd-targ.fits ktwo201233864-c01_lpd-targ.fits ktwo201234630-c01_lpd-targ.fits ktwo201234711-c01_lpd-targ.fits ktwo201235266-c01_lpd-targ.fits $DBFILE
+sqlite3 $DBFILE "select * from headers"
+
+# test_channel_transform # 
+
+ python -c "from k2phot.tests.test_channel_transform import *; test_channel_transform()"
 
 7. Test that everything works with the following command
 

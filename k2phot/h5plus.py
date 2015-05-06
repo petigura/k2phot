@@ -1,7 +1,6 @@
 import h5py
 import numpy as np
 import os
-from matplotlib import mlab
 import sys
 #import pyfits
 
@@ -267,39 +266,3 @@ Diff Columns
    print "ds.shape = (%i,%i); ds.chunks=(%i,%i)" % (ds.shape + ds.chunks)
    return ds,ds1d
 
-def attchKW(ds,kwL,keys):
-   """
-   Attach keywords 
-
-   Parameters
-   ----------
-   tL    : List of open tables
-   keys  : List of h5 compatible keywords
-
-   """
-   for k in keys:
-      k = str(k) # h5 saves saves keys as unicode
-      kwarray = np.array( [kw[k] for kw in kwL] )
-      try:
-         ds.attrs[k] = kwarray
-      except:
-         print "could not attach %s" % k
-
-   return ds
-
-def ext(inp,ext,out=None):
-   """
-   Convience function for extension short cuts.
-   """
-   
-   bname = os.path.basename(inp)
-   bname_no_ext = bname.split('.')[0]
-
-   if out is None:
-      out = bname_no_ext+ext
-   elif os.path.isdir(out):
-      out = out+bname_no_ext+ext
-
-   return out
-
-      
