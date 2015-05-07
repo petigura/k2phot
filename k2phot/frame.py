@@ -9,6 +9,13 @@ import circular_photometry
 from io_utils.pixel import get_stars_pix
 
 class Frame(np.ndarray):
+    """
+    Frame 
+
+    Lightweight extension to ndarray object. Can compute momments of
+    the image and plot itself
+    """
+
     def __new__(cls, input_array,locx=None,locy=None,r=None,pixels=None,
                 ap_weights=None):
         # Input array is an already formed ndarray instance
@@ -24,37 +31,6 @@ class Frame(np.ndarray):
     def __array_finalize__(self, obj):
         # see InfoArray.__array_finalize__ for comments
         if obj is None: return
-
-    def plot(self,scale='log'):
-        apertures = CircularAperture([self.locx,self.locy], r=self.r)
-
-        z = self.copy()
-        z -= np.nanmedian(z)
-        if scale=='log':
-            z = np.log10(self)
-            z = ma.masked_invalid(z)
-            z.mask = z.mask | (z < 0)
-            z.fill_value = 0
-            z = z.filled()
-
-        imshow2(z)
-
-        if self.pixels is not None:
-            for i,pos in enumerate(self.pixels):
-                r,c = pos
-                plt.text(c,r,i,va='center',ha='center',color='Orange')
-
-        apertures.plot(color='Lime',lw=1.5,alpha=0.5)
-        plt.xlabel('Column (pixels)')
-        plt.ylabel('Row (pixels)')
-
-    def plot_label(self,fn,epic):
-        """
-        Query the catalog for nearby stars. Pull the WCS from the fits file
-        """
-        catcut, shift = get_stars_pix(fn,self, dkepmag=5)
-        xcen,ycen = catcut.ix[epic]['pix0 pix1'.split()]
-        plot_label(self,catcut,epic,colorbar=True )
 
     def get_moments(self):
         """
@@ -93,6 +69,38 @@ class Frame(np.ndarray):
 
         moments = np.hstack([moments,c_moments])
         return moments
+
+    def plot(self,scale='log'):
+        apertures = CircularAperture([self.locx,self.locy], r=self.r)
+
+        z = self.copy()
+        z -= np.nanmedian(z)
+        if scale=='log':
+            z = np.log10(self)
+            z = ma.masked_invalid(z)
+            z.mask = z.mask | (z < 0)
+            z.fill_value = 0
+            z = z.filled()
+
+        imshow2(z)
+
+        if self.pixels is not None:
+            for i,pos in enumerate(self.pixels):
+                r,c = pos
+                plt.text(c,r,i,va='center',ha='center',color='Orange')
+
+        apertures.plot(color='Lime',lw=1.5,alpha=0.5)
+        plt.xlabel('Column (pixels)')
+        plt.ylabel('Row (pixels)')
+
+    def plot_label(self,fn,epic):
+        """
+        Query the catalog for nearby stars. Pull the WCS from the fits file
+        """
+        catcut, shift = get_stars_pix(fn,self, dkepmag=5)
+        xcen,ycen = catcut.ix[epic]['pix0 pix1'.split()]
+        plot_label(self,catcut,epic,colorbar=True )
+
 
 def test_frame_moments():
     flux = np.ones((20,20))
