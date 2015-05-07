@@ -7,8 +7,7 @@ import pandas as pd
 
 from frame import Frame
 import circular_photometry
-from pixel_decorrelation import loadPixelFile
-from pixel_decorrelation import get_wcs
+from io_utils.pixel import loadPixelFile, get_wcs
 
 
 class ImageStack(object):

@@ -17,7 +17,7 @@ from george import kernels
 from imagestack import ImageStack,read_imagestack
 from channel_transform import read_channel_transform
 
-from pixel_io import bjd0
+from config import bjd0
 from ses import ses_stats
 import flatfield
 from astropy.io import fits

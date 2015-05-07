@@ -14,10 +14,9 @@ from scipy import ndimage as nd
 import h5plus
 import image_transform as imtran
 import k2_catalogs
-from pixel_decorrelation import get_wcs
+from io_utils.pixel import get_wcs
 
 K2_ARCHIVE = os.environ['K2_ARCHIVE']
-
 
 def channel_transform(fitsfiles, h5file, iref= None):
     """

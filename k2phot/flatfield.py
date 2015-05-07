@@ -13,10 +13,7 @@ from astropy.io import fits
 import matplotlib.pylab as plt
 from photutils.aperture_core import _sanitize_pixel_positions
 from pdplus import LittleEndian as LE
-
-from pixel_decorrelation import get_star_pos, loadPixelFile, get_stars_pix, \
-    subpix_reg_stack
-
+from io_utils.pixel import get_star_pos, get_stars_pix
 from imagestack import ImageStack
 
 
@@ -395,6 +392,56 @@ def get_bin_med_std(dfcad,x):
     # Compute FOM, ignoring masked cadences
     fom = np.median(g.std()['x']) 
     return fom
+
+
+def subpix_reg_stack(stack, maxoff=2, refmode=0):
+    """
+    Subpixel Registration Image Stack
+
+    Parameters 
+    ----------
+    stack : (Nimage, Nrows, Ncols)
+    maxoff : Maximum offset allowed. Passed to `register_images.` Also
+             creates a buffer region for each image in the stack
+             besides the reference frame.
+    refmode : What to use as the 'template' image. If an integer, use
+              stack[refmode]; other options are 'mean' or 'median'.
+
+    Returns
+    -------
+    dx, dy : tuple of 1D arrays
+    """
+    # 2014-10-24 21:08 IJMC: Added refmode
+
+    stack = stack.copy()
+    stack = ma.masked_array(stack,True)
+
+    # All frame except the first (reference frame) get padded
+    stack.mask[:] = False
+    stack.mask[1:,maxoff:-maxoff,maxoff:-maxoff] = False
+
+    stack.fill_value=0
+    stack = stack.filled()
+    
+    Nimage,Nrows,Ncols = stack.shape
+    dx = np.zeros(Nimage)
+    dy = np.zeros(Nimage)
+    
+    if refmode=='mean':
+        template = stack.mean(0)
+    elif refmode=='median':
+        template = np.median(stack, axis=0)
+    else:
+        template = stack[0]
+    
+    # Determine the shift between first frame and the others
+    for i in range(Nimage):
+        dx[i],dy[i] = register_images(
+            template, stack[i], usfac=100.,zeromean=False,maxoff=maxoff)
+
+    return dx,dy
+
+
 
 if __name__ == "__main__":
     np.set_printoptions(precision=4)

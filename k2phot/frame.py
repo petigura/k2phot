@@ -3,9 +3,11 @@ from numpy import ma
 from skimage import measure
 from photutils import CircularAperture
 import pandas as pd
-from pixel_decorrelation import imshow2,get_stars_pix
-import circular_photometry
 from matplotlib import pylab as plt
+
+import circular_photometry
+from io_utils.pixel import get_stars_pix
+
 class Frame(np.ndarray):
     def __new__(cls, input_array,locx=None,locy=None,r=None,pixels=None,
                 ap_weights=None):
@@ -138,3 +140,13 @@ def plot_label(image,catcut,epic,colorbar=True, shift=None, retim=False,
     return ret
 
 
+def imshow2(im,**kwargs):
+    extent = None#(0,im.shape[0],0,im.shape[1])
+
+    if kwargs.has_key('cmap')==False or kwargs['cmap'] is None:
+        kwargs['cmap'] = plt.cm.gray 
+
+    im = plt.imshow(im,interpolation='nearest',origin='lower',
+                    extent=extent,**kwargs)
+
+    return im
