@@ -6,7 +6,6 @@ from astropy import wcs
 
 import numpy as np
 from numpy import ma
-from .. import tools
 import pandas as pd
 import k2_catalogs
 
@@ -97,7 +96,7 @@ def loadPixelFile(fn, tlimits=None, bjd0=2454833, tex=None):
     cube = cube[b]
 
     cube['time'][:] = cube['time'] + bjd0
-    ret = (cube,) + ([tools.headerToDict(el.header) for el in f],)
+    ret = (cube,) + ([headerToDict(el.header) for el in f],)
 
     f.close()
     return ret
@@ -379,3 +378,29 @@ def query_stars_in_stamp(pixfn,dkepmag=5):
     # Return copy so that pandas doesn't complain about working on a view
     catcut = catcut.copy() 
     return catcut
+
+def cardUndefined(headercard):
+    try:
+        from astropy.io import fits as pyfits
+    except:
+        import pyfits
+
+    return (headercard is pyfits.card.UNDEFINED) or \
+            (headercard is pyfits.card.Undefined)
+
+def headerToDict(header):
+    """Convert a PyFITS header into a standard NumPy dict.
+    """
+    # 2014-08-27 11:33 IJMC: Created
+
+    ret = dict()
+    comments = dict()
+    for card in header.cards:
+        key, val, comment = card
+        if cardUndefined(val):
+            val = ''
+        ret[key] = val
+        comments[key] = comment
+
+    ret['comments'] = comments
+    return ret

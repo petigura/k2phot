@@ -13,7 +13,6 @@ from matplotlib import pylab as plt
 from scipy import ndimage as nd
 import h5plus
 import image_transform as imtran
-import k2_catalogs
 from io_utils.pixel import get_wcs
 
 K2_ARCHIVE = os.environ['K2_ARCHIVE']
