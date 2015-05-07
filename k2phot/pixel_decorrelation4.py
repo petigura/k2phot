@@ -15,7 +15,8 @@ import george
 from george import kernels
 
 from imagestack import ImageStack,read_imagestack
-import channel_centroids
+from channel_transform import read_channel_transform
+
 from pixel_io import bjd0
 from ses import ses_stats
 import flatfield
@@ -501,7 +502,7 @@ def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np
     lc = im.ts # This is a skeleton light curve
 
     # Load up transformation information
-    trans,pnts = channel_centroids.read_channel_centroids(transfile)
+    trans,pnts = read_channel_transform(transfile)
     trans['roll'] = trans['theta'] * 2e5
 
     # Merge transformation info with the rest of the light curve
@@ -713,9 +714,7 @@ if __name__ == "__main__":
         '--tex', type=str, default=None,help='Exclude time range'
     )
 
-    
     args  = p.parse_args()
-
     tex = args.tex
     if type(args.tex)!=type(None):
         tex = eval("np.array(%s)" % tex)
@@ -723,6 +722,6 @@ if __name__ == "__main__":
     tlimits = [args.tmin,args.tmax]
 
     pixel_decorrelation(
-        args.pixfile,args.lcfile,args.transfile,debug=args.debug,
-        tlimits=tlimits, tex = tex
+        args.pixfile, args.lcfile, args.transfile, debug=args.debug,
+        tlimits=tlimits, tex=tex
         )

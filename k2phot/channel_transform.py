@@ -69,7 +69,7 @@ def channel_transform(fitsfiles, h5file, iref= None):
             h5['trans'] = trans
             h5['pnts'] = pnts
             
-    trans,pnts = read_channel_centroids(h5file)
+    trans,pnts = read_channel_transform(h5file)
     plot_trans(trans)
     figpath = h5file[:-3] + '.png'
     plt.gcf().savefig(figpath)
@@ -233,7 +233,7 @@ def LE(arr):
     arrL = np.rec.fromarrays(arrL,names=names)
     return arrL
 
-def read_channel_centroids(h5file):
+def read_channel_transform(h5file):
     with h5py.File(h5file,'r') as h5:
         trans = h5['trans'][:] 
         pnts = h5['pnts'][:]
