@@ -1,4 +1,4 @@
-from ..pixel_decorrelation4 import pixel_decorrelation
+from ..pixel_decorrelation import pixel_decorrelation
 
 import os
 

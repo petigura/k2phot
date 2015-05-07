@@ -1,19 +1,19 @@
+from argparse import ArgumentParser
 import os
 import sqlite3
-from argparse import ArgumentParser
 
 from astropy.io import fits
 import numpy as np
 from numpy import ma
 import h5py
 import pandas as pd
-
 from matplotlib import mlab
 from matplotlib import pylab as plt
 from scipy import ndimage as nd
-import h5plus
+
 import image_transform as imtran
 from io_utils.pixel import get_wcs
+from io_utils import h5plus
 
 K2_ARCHIVE = os.environ['K2_ARCHIVE']
 
