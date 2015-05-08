@@ -15,8 +15,6 @@ import image_transform as imtran
 from io_utils.pixel import get_wcs
 from io_utils import h5plus
 
-K2_ARCHIVE = os.environ['K2_ARCHIVE']
-
 def channel_transform(fitsfiles, h5file, iref= None):
     """
     Channel Transformation

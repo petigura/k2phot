@@ -9,7 +9,7 @@ import os
 
 from astropy.io import fits
 
-K2PHOT_DIR = os.environ['K2PHOT_DIR']
+from ..config import K2PHOT_DIR
 SCHEMAFILE = os.path.join(K2PHOT_DIR,'sql/headers_schema.sql')
 
 def scrape_header_to_db(fitsfile,dbfile):

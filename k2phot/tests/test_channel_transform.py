@@ -1,7 +1,6 @@
 import os
 from ..channel_transform import channel_transform
-K2_ARCHIVE = os.environ['K2_ARCHIVE']
-K2PHOTFILES = os.environ['K2PHOTFILES']
+from ..config import K2_ARCHIVE, K2PHOTFILES
 
 fitsfiles = """ktwo201222515-c01_lpd-targ.fits ktwo201223635-c01_lpd-targ.fits
 ktwo201226808-c01_lpd-targ.fits ktwo201227422-c01_lpd-targ.fits

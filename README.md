@@ -15,16 +15,10 @@ Tested with Python v2.7.3, 2.7.6, 2.7.8
 - SciPy (tested with 0.7.0, 0.10.1, 0.14.0)
 - AstroPy (for io.fits; tested with v0.4, 0.4.1)
 - Pandas (v0.14.1)
-- sklearn (0.14.1)
 - skimage (0.10.0)
 ```
 
 ### Private Python modules ###
-```
-- analysis.py -- http://www.lpl.arizona.edu/~ianc/python/analysis.html
-- tools.py -- http://www.lpl.arizona.edu/~ianc/python/tools.html
-- phot.py -- http://www.lpl.arizona.edu/~ianc/python/phot.html
-```
 
 ## Installation Instructions ##
 
@@ -51,11 +45,8 @@ Tested with Python v2.7.3, 2.7.6, 2.7.8
   and the following modifications need to be made to the PATH and PYTHONPATH
   
   ```
-  prepend-path PYTHONPATH $K2PHOT_DIR/code/py
-  prepend-path PYTHONPATH $K2PHOT_DIR/K2fov/build/lib/
-  prepend-path PYTHONPATH $K2_TERRA_DIR
+  prepend-path PYTHONPATH $K2PHOT_DIR/k2phot/
 
-  prepend-path PATH $K2PHOT_DIR/code/py/
   prepend-path PATH $K2PHOT_DIR/code/bin/
   prepend-path PATH $K2_TERRA_DIR/k2_webapp/
   prepend-path PATH $K2_TERRA_DIR/bin/

@@ -22,8 +22,8 @@ from astropy.io import fits
 import numpy as np
 import sqlite3
 
-K2PHOTFILES = os.environ['K2PHOTFILES']
-K2PHOT_DIR = os.environ['K2PHOT_DIR']
+from ..config import K2PHOTFILES,K2PHOT_DIR
+
 
 k2cat_sqlfile = os.path.join(K2PHOTFILES,'catalogs/k2_catalogs.sqlite')
 k2cat_h5file = os.path.join(K2PHOTFILES,'catalogs/k2_catalogs.h5')
