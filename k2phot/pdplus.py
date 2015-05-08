@@ -1,7 +1,6 @@
 """
-Module to augment pandas functionality. If time, make a pull request.
+Module to augment pandas functionality. 
 """
-
 import pandas as pd
 import numpy as np
 from cStringIO import StringIO
@@ -27,7 +26,6 @@ def LittleEndian(r):
             data[n] = r[n] 
     q = pd.DataFrame(data,columns=names)
     return np.array(q.to_records(index=False))
-
 
 def df_to_ndarray(df):
     """

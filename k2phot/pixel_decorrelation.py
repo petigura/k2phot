@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-
 from argparse import ArgumentParser
 import os
 from cStringIO import StringIO as sio
@@ -19,11 +18,10 @@ from channel_transform import read_channel_transform
 
 from config import bjd0
 from ses import ses_stats
-import flatfield
 from astropy.io import fits
 import contextlib
 
-os.system('echo "pixel_decorrelation4 modules loaded:" $(date) ')
+os.system('echo "pixel_decorrelation modules loaded:" $(date) ')
 
 noisekey = 'fdt_t_roll_2D' # Column to use to compute noise
 noisename = 'mad_6_cad_mtd' # Noise metric to use for optimal aperture
@@ -39,7 +37,6 @@ C1 93426 94182
 C1 94188 94892
 C1 94894 95348
 """
-
 segments = pd.read_table(sio(segments),sep='\s*')
 
 def plotseg():
