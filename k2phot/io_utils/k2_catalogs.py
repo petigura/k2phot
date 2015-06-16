@@ -14,21 +14,23 @@ Example catalogues are found at
 """
 
 import os
+from cStringIO import StringIO as sio
+import sqlite3
+
 import pandas as pd
 from astropy import units as u
 from astropy.coordinates import Longitude,Latitude
 from astropy.io import fits
+import h5py
 
 import numpy as np
-import sqlite3
-
 from ..config import K2PHOTFILES,K2PHOT_DIR
-
 
 k2cat_sqlfile = os.path.join(K2PHOTFILES,'catalogs/k2_catalogs.sqlite')
 k2cat_h5file = os.path.join(K2PHOTFILES,'catalogs/k2_catalogs.h5')
-MAST_CATALOGS = os.path.join(K2PHOT_DIR,'mast_catalogs/')
 
+MAST_CATALOGS = os.path.join(K2PHOTFILES,'mast_catalogs/')
+TARGET_LISTS = os.path.join(K2PHOTFILES,'target_lists/')
 
 def read_mast_cat(k2_camp,debug=False):
     """
@@ -42,7 +44,6 @@ def read_mast_cat(k2_camp,debug=False):
     cat.index = cat.epic
     return cat
 
-
 def read_target_list(k2_camp):
     if k2_camp=='C0':
         targetsfn = 'K2Campaign0targets.csv'
@@ -51,7 +52,8 @@ def read_target_list(k2_camp):
     elif k2_camp=='C2':
         targetsfn = 'K2Campaign2targets.csv'
 
-    targetsfn = os.path.join(K2PHOT_DIR,'target_lists/',targetsfn)
+    targetsfn = os.path.join(TARGET_LISTS,targetsfn)
+    import pdb;pdb.set_trace()
 
     if (k2_camp=='C0') or (k2_camp=='C1'):
         targets = pd.read_csv(targetsfn,usecols=[0])
@@ -61,18 +63,24 @@ def read_target_list(k2_camp):
 
     return targets
 
-def read_epic(k2_camp,debug=False):
-    if k2_camp=='C2':
-        readmefn = 'README_d1497_01_epic_c23_dmc'
-        catalogfn = 'd1497_01_epic_c23_dmc.mrg.gz' 
-    if k2_camp=='C6':
-        readmefn = "README_d14260_01_epic_c6_dmc"
-        catalogfn = "d14260_01_epic_c6_dmc.mrg.gz"
-    if k2_camp=='C7':
-        readmefn = "README_d14260_03_epic_c7_dmc"
-        catalogfn = "d14260_03_epic_c7_dmc.mrg.gz"
 
-    readmefn = os.path.join(MAST_CATALOGS,readmefn)
+
+s = """
+k2camp readmefn catalogfn
+C1 README_epic_field1_dmc d1435_02_epic_field1_dmc.mrg.gz
+C2 README_d1497_01_epic_c23_dmc d1497_01_epic_c23_dmc.mrg.gz
+C6 README_d14260_01_epic_c6_dmc d14260_01_epic_c6_dmc.mrg.gz
+C7 README_d14260_03_epic_c7_dmc d14260_03_epic_c7_dmc.mrg.gz
+"""
+filenames = pd.read_table(sio(s),sep='\s',index_col=0)
+
+def read_epic(k2_camp,debug=False):
+    assert k2_camp in filenames.index, \
+        "readmefn and/or catalogfn not defined for %s " % k2_camp
+    
+    readmefn = filenames.ix[k2_camp,'readmefn']
+    readmefn = os.path.join( MAST_CATALOGS , readmefn )
+    catalogfn = filenames.ix[k2_camp,'catalogfn']
     catalogfn = os.path.join(MAST_CATALOGS,catalogfn)
 
     # Read in the column descriptors
@@ -105,9 +113,30 @@ def read_epic(k2_camp,debug=False):
 
     return cat
 
-def read_cat(k2_camp,return_targets=True):
+def read_cat(k2_camp, **kwargs):
     """
     Read catalog
+    
+    Parameters
+    ----------
+    k2_camp : K2 Campaign (e.g. 'C1') or 'all'
+
+    """
+    
+    reader = lambda x : read_cat_campaign(x, **kwargs)
+    if k2_camp=='all':
+        with h5py.File(k2cat_h5file,'r') as h5:
+            k2_campaigns = h5.keys()
+        cat = map(reader, k2_campaigns)
+        cat = pd.concat(cat)
+    else:
+        cat = reader(k2_camp)
+
+    return cat 
+
+def read_cat_campaign(k2_camp,return_targets=True):
+    """
+    Read catalog for a single campaign
 
     Reads in pandas DataFrame from pytables database.
     
@@ -115,11 +144,14 @@ def read_cat(k2_camp,return_targets=True):
     ----------
     k2_camp : K2 Campaign 
     """
+
+    print "reading in catalog for %s from %s " % (k2_camp, k2cat_h5file)
     cat = pd.read_hdf(k2cat_h5file,k2_camp)
+    cat['k2_camp'] = k2_camp
     if return_targets:
         cat = cat[cat.target]
-
     return cat
+
 
 def read_diag(k2_camp,nbin=20):
     """
@@ -144,9 +176,14 @@ def read_diag(k2_camp,nbin=20):
     cat = read_cat(k2_camp)
 
     dfdiag = []
-    kepmagbin = range(10,16)
+    kepmagbin = range(6,16)
     for kepmag in kepmagbin:
-        cut = cat[cat.kepmag.between(kepmag-0.1,kepmag+0.1)]
+        if kepmag < 8:
+            binwidth = 0.5
+        else:
+            binwidth = 0.1
+
+        cut = cat[np.abs(cat.kepmag - kepmag) < binwidth]
         ids = np.array(cut.index).copy()
         np.random.shuffle(ids)
         cut = cut.ix[ids[:nbin]]
