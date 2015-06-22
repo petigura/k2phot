@@ -16,7 +16,7 @@ from imagestack import ImageStack,read_imagestack
 from channel_transform import read_channel_transform
 
 from config import bjd0
-from ses import ses_stats
+from ses import ses_stats,total_precision_theory
 from astropy.io import fits
 import contextlib
 
@@ -429,6 +429,11 @@ def detrend_t_roll_iter(lc,f0,niter=5,plot_diag=True):
 def detrend_t_roll_2D(lc):
     L_t = 4**2 # Correlation length-scale for time component
     L_roll = 10**2 # Correlation length-scale for roll component
+    yerr = 50e-6
+
+#    sigma = 10**2
+    sigma = 0.001**2
+
 
     tkey = 't roll'.split() # name of dependent variable
     ykey = 'f' # name of independent variable
@@ -438,8 +443,7 @@ def detrend_t_roll_2D(lc):
     b = np.array(~lc.fdtmask)
     x = np.array(lc_gp[tkey])
     y = lc[ykey][b]
-    yerr = 1e-4
-    k2d = 1.*kernels.ExpSquaredKernel([L_t,L_roll],ndim=2) 
+    k2d = sigma*kernels.ExpSquaredKernel([L_t,L_roll],ndim=2) 
     gp = george.GP(k2d)
     gp.compute(x,yerr)
 
@@ -458,6 +462,23 @@ def detrend_t_roll_2D(lc):
     lc['ftnd_t_rollmed'] = mu
     lc['fdt_t_rollmed'] = lc[fdtkey] + mu
     return lc
+
+def white_noise_estimate(kepmag):
+    """
+    Estimate White Noise
+    
+    The Gaussian Process noise model assumes that some of the variance
+    is white. 
+
+    """
+    fac = 2 # Factor by which to inflate Poisson and read noise estimate
+    noise_floor = 100e-6 # Do not allow noise estimate to fall below this amount
+    
+    # Estimate from Poisson and read noise.
+    sigma_th =  total_precision_theory(kepmag,10)
+    sigma_th *= fac
+    sigma_th = max(noise_floor,sigma_th)
+    return sigma_th
 
 def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np.inf],tex=None):
     """
@@ -486,13 +507,13 @@ def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np
             )
 
         s = "full mode"
-        apertures = range(2,8)
+        apertures = range(3,8)
         niter0 = 5
 
     dfiter = pd.DataFrame(dfiter)
 
-    basename = os.path.splitext(lcfile)[0]
-    starname = os.path.basename(basename)
+    # Define skeleton light curve. This pandas DataFrame contains all
+    # the columns that don't depend on which aperture is used.
 
     im,x,y = read_imagestack(pixfile,tlimits=tlimits,tex=tex)
     lc = im.ts # This is a skeleton light curve
@@ -511,7 +532,6 @@ def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np
     # grab the outliers from this run and use it in subsequent runs
     im.set_apertures(x,y,r0)
     lc = Lightcurve(lc) # upcast to light curve object
-
     lc['fsap'] = im.get_sap_flux()
 
     # Standardize the data
@@ -521,6 +541,10 @@ def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np
     lc['fmask'] = lc['f'].isnull() | lc['thrustermask'] | lc['bgmask']
     lc['fdtmask'] = lc['fmask'].copy()
 
+    kepmag = fits.open(pixfile)[0].header['KEPMAG']
+    sigma_n = white_noise_estimate(kepmag)
+
+    
     lc = detrend_t(lc,plot_diag=False) 
     lc = detrend_roll_seg(lc,plot_diag=False)
 
@@ -560,6 +584,9 @@ def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np
         lc = detrend_t_roll_2D(lc)
         dfses = lc.get_ses(noisekey) # Cast as Lightcurve object
         noise = dfses.ix[noisename]
+
+        basename = os.path.splitext(lcfile)[0]
+        starname = os.path.basename(basename)
 
         sdisp = """\
 starname=%s
