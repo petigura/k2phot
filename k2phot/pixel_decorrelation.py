@@ -184,144 +184,6 @@ class Normalizer:
         return (x + 1) * self.xmed
 
 
-def detrend_t(lc,plot_diag=False):
-    """
-    Detrend against time
-    """
-
-    tkey = 't' # name of dependent variable
-    ykey = 'f' # name of independent variable
-    L_t = 4  # caracteristic length-scale for time-dependent kernel
-    A_t = 0.2 # Amplitude term in time-kernel
-    fdtkey = 'fdt_t' 
-    ftndkey = 'ftnd_t' 
-
-    L_t = 4  # caracteristic length-scale for time-dependent kernel
-    A_t = 0.2 # Amplitude term in time-kernel
-    bin_width_t = 0.5 # size [days of light curve bins]
-
-    # Light curve used in GP
-    lc_gp = lc[~lc.fdtmask]
-
-    for key in [tkey,ykey]:
-        assert lc_gp[key].isnull().sum()==0,"GP array can contain no nans"
- 
-    # Compute bins 
-    bins_t = np.arange(
-        lc.iloc[0][tkey], 
-        lc.iloc[-1][tkey]+bin_width_t,
-        bin_width_t
-        )
-    nbins = len(bins_t) - 1
-
-    g = lc.groupby(pd.cut(lc_gp.t,bins_t))
-    lc_bin_t = g[[tkey,ykey]].median()
-    lc_bin_t['yerr'] = g[ykey].std() / np.sqrt(g[ykey].size())
-    lc_bin_t = lc_bin_t.dropna()
-
-    t = lc_bin_t[tkey] # Independent variable
-    y = lc_bin_t[ykey] # Error on dependent variable
-    yerr = lc_bin_t['yerr']
-
-    # Construct GP
-    theta_t = L_t**2
-    k_t = A_t * kernels.ExpSquaredKernel(theta_t)
-    gp = george.GP(k_t,solver=george.HODLRSolver)
-    gp.compute(t,yerr)
-
-    mu, cov = gp.predict(y,lc[tkey])
-
-    # Update fields
-    lc[ftndkey] = mu
-    lc[fdtkey] = lc[ykey] - lc[ftndkey]
-
-    if plot_diag:
-        lcplot = lc.dropna(subset=[tkey,ykey])
-        lcplotout = lcplot[lcplot.fdtmask]
-
-        fig = plt.figure(figsize=(20,8))
-        ax1 = plt.subplot2grid((3,3), (0,0), colspan=3)
-        ax2 = plt.subplot2grid((3,3), (1,0), colspan=3,rowspan=2)
-
-        sca(ax2)
-        plot(lcplot[tkey],lcplot[ykey],label='Unbinned Flux')
-        errorbar(t,y,yerr=yerr,fmt='.',label='Binned Flux')
-
-        gpfmt = dict(color='c',lw=2,zorder=10,ms=8,label=ftndkey)        
-        plot(lcplot[tkey],lcplot[ftndkey],**gpfmt)
-        plot(lcplotout[tkey],lcplotout[ykey],**outfmt)
-
-        sca(ax1)
-        plot(
-            lcplot[tkey],lcplot[fdtkey],label='Detrended flux (after fit to t)'
-            )
-
-        plot(
-            lcplotout[tkey],lcplotout[fdtkey],**outfmt)
-
-        xlabel('Time [days]')
-        ylabel('Flux')
-        gcf().set_tight_layout(True)
-
-    return lc
-
-def detrend_roll(lc,plot_diag=False,axL=None):
-    """
-    Detrend against roll angle
-
-    Parameters
-    ----------
-    lc : Pandas DataFrame must contain the following fields
-         - roll
-         - fdt_t - flux detrended against time
-         - fmask - if true, flux is ignored 
-         - fdtmask - if true, flux is ignored from construction of model
-
-    """
-    tkey = 'roll' # name of dependent variable
-    ykey = 'fdt_t' # name of independent variable
-    L_roll = 10  # caracteristic length-scale for roll-dependent kernel [arcsec]
-    A_roll = 0.2 # Amplitude term in time-kernel
-    fdtkey = 'fdt_t_roll' 
-    ftndkey = 'ftnd_t_roll' 
-
-    # Light curve used in GP
-    lc_gp = lc[~lc.fdtmask]
-    for key in [tkey,ykey]:
-        assert lc_gp[key].isnull().sum()==0,"GP array can contain no nans"
-
-    # Construct GP object
-    theta_roll = L_roll**2
-    k_roll = A_roll * kernels.ExpSquaredKernel(theta_roll)
-    gp = george.GP(k_roll,solver=george.HODLRSolver)
-    t = lc_gp[tkey] # Independent variable
-    y = lc_gp[ykey] # Error on dependent variable
-    yerr = 1e-3
-    gp.compute(t,yerr)
-
-    mu, cov = gp.predict(lc_gp[ykey],lc[tkey])        
-    lc[ftndkey] = mu
-    lc[fdtkey] = lc[ykey] - lc[ftndkey]
-
-    if plot_diag:
-        sca(axL[1])
-        lcplot = lc.dropna(subset=[tkey,ykey])
-        lcplot = lcplot.sort(tkey)
-        lcplotout = lcplot[lcplot.fmask]
-        infmt = dict(marker='.',lw=0,zorder=10,label=fdtkey)
-        outfmt = dict(marker='o',mew=0,mfc='r',alpha=0.5,lw=0,zorder=0,ms=6,
-                      label='Excluded from Model')
-        gpfmt = dict(color='c',lw=2,zorder=10,ms=8,label=ftndkey)        
-
-        plot(lcplot[tkey],lcplot[ykey],**infmt)
-        plot(lcplotout[tkey],lcplotout[ykey],**outfmt)
-        plot(lcplot[tkey],lcplot[ftndkey],**gpfmt)
-        sca(axL[0])
-        plot( lcplot[tkey],lcplot[ykey] - lcplot[ftndkey],**infmt )
-        plot(lcplotout[tkey],lcplotout[ykey] - lcplotout[ftndkey],**outfmt)
-
-    return lc
-
 def detrend_roll_seg(lc,plot_diag=False,verbose=False):
     print "Light curve: ntotal=%i nfmask=%i nfdtmask=%i" % \
         (len(lc),lc['fmask'].sum(),lc['fdtmask'].sum())
@@ -426,42 +288,129 @@ def detrend_t_roll_iter(lc,f0,niter=5,plot_diag=True):
         lc = detrend_roll_seg(lc,plot_diag=plot_diag)
     return lc
 
-def detrend_t_roll_2D(lc):
-    L_t = 4**2 # Correlation length-scale for time component
-    L_roll = 10**2 # Correlation length-scale for roll component
-    yerr = 50e-6
+def detrend_t_roll_2D(lc, sigma, length_t, length_roll, sigma_n, 
+                      reject_outliers=False,debug=False):
+    """
+    Detrend against time and roll angle. Hyperparameters are passed
+    in as arguments. Option for iterative outlier rejection.
 
-#    sigma = 10**2
-    sigma = 0.001**2
+    Parameters
+    ----------
+    sigma : sets the scale of the GP variance
+    length_t : length scale [days] of GP covariance
+    length_roll : length scale [arcsec] of GP covariance
+    sigma_n : amount of white noise
+    reject_outliers : True, reject outliers using iterative sigma clipping
 
+    Returns 
+    -------
+    """
 
-    tkey = 't roll'.split() # name of dependent variable
-    ykey = 'f' # name of independent variable
+    # Define constants
+    Xkey = 't roll'.split() # name of dependent variable
+    Ykey = 'f' # name of independent variable
     fdtkey = 'fdt_t_roll_2D' 
     ftndkey = 'ftnd_t_roll_2D' 
-    lc_gp = lc[~lc.fdtmask]
-    b = np.array(~lc.fdtmask)
-    x = np.array(lc_gp[tkey])
-    y = lc[ykey][b]
-    k2d = sigma*kernels.ExpSquaredKernel([L_t,L_roll],ndim=2) 
-    gp = george.GP(k2d)
-    gp.compute(x,yerr)
+    outlier_threshold = [None,10,5,3]
 
-    X_t_roll = lc[tkey]
+    if reject_outliers:
+        maxiter = len(outlier_threshold) - 1
+    else:
+        maxiter = 1
 
-    mu,cov = gp.predict(y,X_t_roll)
-    lc[ftndkey] = mu
-    lc[fdtkey] = lc[ykey] - lc[ftndkey]
+    print "sigma, length_t, length_roll, sigma_n"
+    print sigma, length_t, length_roll, sigma_n
 
-    # Also freeze out roll angle dependence
-    medroll = np.median( lc['roll'] ) 
-    X_t_rollmed = lc[tkey].copy()
-    X_t_rollmed['roll'] = medroll
-    yerr = 1e-4
-    mu,cov = gp.predict(y,X_t_rollmed)
-    lc['ftnd_t_rollmed'] = mu
-    lc['fdt_t_rollmed'] = lc[fdtkey] + mu
+    iteration = 0
+    while iteration < maxiter:
+        if iteration==0:
+            fdtmask = np.array(lc.fdtmask)
+        else:
+            # Clip outliers 
+            fdt = lc[fdtkey]
+            sig = np.median( np.abs( fdt ) ) * 1.5
+            newfdtmask = np.abs( fdt / sig ) > outlier_threshold[iteration]
+            fdtmask = fdtmask | newfdtmask
+            
+        print "iteration %i, %i/%i excluded from GP" % \
+            (iteration,  fdtmask.sum(), len(fdtmask) )
+
+        # suffix _gp means that it's used for the training
+        # no suffix means it's used for the full run
+        lc_gp = lc[~fdtmask] 
+
+        # Define the GP
+        kernel = sigma**2 * kernels.ExpSquaredKernel(
+            [length_t**2,length_roll**2],ndim=2
+            ) 
+
+        gp = george.GP(kernel)
+        gp.compute(lc_gp[Xkey],sigma_n)
+
+        # Detrend againts time and roll angle
+        mu,cov = gp.predict(lc_gp[Ykey],lc[Xkey])
+        lc[ftndkey] = mu
+        lc[fdtkey] = lc[Ykey] - lc[ftndkey]
+
+        # Also freeze out roll angle dependence
+        medroll = np.median( lc['roll'] ) 
+        X_t_rollmed = lc[Xkey].copy()
+        X_t_rollmed['roll'] = medroll
+        mu,cov = gp.predict(lc_gp[Ykey],X_t_rollmed)
+        lc['ftnd_t_rollmed'] = mu
+        lc['fdt_t_rollmed'] = lc[fdtkey] + mu
+
+        iteration+=1
+
+    if debug:
+        lc_gp = lc[~fdtmask] 
+        from matplotlib.pylab import *
+        ion()
+        fig,axL = subplots(nrows=2,sharex=True)
+        sca(axL[0])
+        errorbar(lc_gp['t'],lc_gp[Ykey],yerr=sigma_n,fmt='o')
+        plot(lc['t'],lc[ftndkey])
+        sca(axL[1])
+        fm = ma.masked_array(lc[fdtkey],lc['fmask'])
+        plot(lc['t'],fm)
+        fig = figure()
+        plot(lc_gp['roll'],lc_gp['f'],'.')
+        plot(lc_gp['roll'],lc_gp['ftnd_t_roll_2D'],'.')
+
+        import pdb;pdb.set_trace()
+
     return lc
+
+def detrend_t_roll_2D_segments(*args,**kwargs):
+    """
+    Simple wrapper around detrend_t_roll_2D
+
+    Parameters
+    ----------
+    segment_length : approximate time for the segments [days]
+    
+    Returns
+    -------
+    lc : lightcurve after being stiched back together
+    """
+    lc = args[0]
+    segment_length = kwargs['segment_length']
+    kwargs.pop('segment_length')
+    nchunks = lc['t'].ptp() / segment_length 
+    nchunks = int(nchunks)
+    nchunks = max(nchunks,1)
+    if nchunks==1:
+        args_segment = (lc,) + args[1:]
+        return detrend_t_roll_2D(*args_segment,**kwargs)
+
+    lc_segments = np.array_split(lc,nchunks)
+    lc_out = []
+    for i,lc in enumerate(lc_segments):
+        args_segment = (lc,) + args[1:]
+        lc_out+=[detrend_t_roll_2D(*args_segment,**kwargs)]
+
+    lc_out = pd.concat(lc_out)
+    return lc_out
 
 def white_noise_estimate(kepmag):
     """
@@ -471,7 +420,7 @@ def white_noise_estimate(kepmag):
     is white. 
 
     """
-    fac = 2 # Factor by which to inflate Poisson and read noise estimate
+    fac = 10 # Factor by which to inflate Poisson and read noise estimate
     noise_floor = 100e-6 # Do not allow noise estimate to fall below this amount
     
     # Estimate from Poisson and read noise.
@@ -507,7 +456,7 @@ def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np
             )
 
         s = "full mode"
-        apertures = range(3,8)
+        apertures = range(2,8)
         niter0 = 5
 
     dfiter = pd.DataFrame(dfiter)
@@ -541,32 +490,20 @@ def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np
     lc['fmask'] = lc['f'].isnull() | lc['thrustermask'] | lc['bgmask']
     lc['fdtmask'] = lc['fmask'].copy()
 
+    # Set the values of the GP hyper parameters
     kepmag = fits.open(pixfile)[0].header['KEPMAG']
     sigma_n = white_noise_estimate(kepmag)
-
-    
-    lc = detrend_t(lc,plot_diag=False) 
-    lc = detrend_roll_seg(lc,plot_diag=False)
-
-    # Perform first round of iterative detrending 
-    # Figure out which observations were outliers and repeat
-    print "aperture size=%i" % r0 
-    print "running detrend_t_roll_iter with following parameters:"
-    print dfiter.to_string()
-    lc = detrend_t_roll_iter(lc,f0,niter=niter0)
-    for i,row in dfiter.iterrows():
-        sig = np.median(np.abs(lc['fdt_t_roll']))*1.5
-        boutlier = np.array(np.abs(lc['fdt_t_roll']) > row['sigma_clip']*sig)
-        lc['fdtmask'] = lc['fdtmask'] | boutlier
-        lc = detrend_t_roll_iter(
-            lc,f0,niter=row['niter'],plot_diag=row['plot_diag']
-            )
-
-    figures = [m.canvas.figure for m in Gcf.get_all_fig_managers()]
-    for i,fig in enumerate(figures):
-        figpath = basename+"_fdt_t_roll_r=%i_%i.png" % (r0,i)
-        fig.savefig(figpath)
-    plt.close('all')
+    tchunk = 4 # split lightcurve in to tchunk-day long segments
+    nchunks = lc['t'].ptp() / tchunk
+    nchunks = int(nchunks)
+    sigma = map(lambda x : std(x['f']), np.array_split(lc,nchunks))
+    sigma = np.median(sigma)
+    length_t = 2
+    length_roll = 10
+    lc = detrend_t_roll_2D_segments( 
+        lc, sigma, length_t, length_roll,sigma_n, debug=False, 
+        reject_outliers=True, segment_length=20
+        )
 
     fdtmask = lc['fdtmask'].copy() # Save the mask for future runs
 
@@ -579,9 +516,13 @@ def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np
         lc['fsap'] = im.get_sap_flux()
         norm = Normalizer(lc['fsap'].median()) 
         lc['f'] = norm.norm(lc['fsap'])        
-        f0 = np.array(lc['f'].copy())
         lc['fdtmask'] = fdtmask # Sub in dt mask from previous iteration
-        lc = detrend_t_roll_2D(lc)
+        lc = detrend_t_roll_2D( 
+            lc, sigma, length_t, length_roll,sigma_n, debug=False, 
+            reject_outliers=False
+        )
+
+        lc = Lightcurve(lc)
         dfses = lc.get_ses(noisekey) # Cast as Lightcurve object
         noise = dfses.ix[noisename]
 
@@ -600,10 +541,10 @@ mad_1_cad_mean=%.1f
 
         unnormkeys = [
             "f",
-            "fdt_t",
-            "ftnd_t",
-            "fdt_t_roll",
-            "ftnd_t_roll",
+#            "fdt_t",
+#            "ftnd_t",
+#            "fdt_t_roll",
+#            "ftnd_t_roll",
             "fdt_t_roll_2D",
             "ftnd_t_roll_2D",
             "fdt_t_rollmed",
@@ -626,6 +567,15 @@ mad_1_cad_mean=%.1f
     to_fits(pixfile,lcfile,lc,dfapersave)
 
     # Generate diagnostic plots
+    if debug:
+        ion()
+        figure()
+        fm = ma.masked_array(lc['fdt_t_rollmed'],lc['fmask'])
+        plot(lc['t'],fm)
+
+        import pdb;pdb.set_trace()
+
+
     with FigureManager(basename,suffix='_0-median-frame.png'):
         # Add title and stars
         im.radius = dmin['r']
@@ -690,13 +640,13 @@ def to_fits(pixfile,fitsfile,lc,dfaper):
         ["fmask","L","Global mask. Observation ignored","bool"],
         ["fdtmask","L",
          "Detrending mask. Observation ignored in detrending model","bool"],
-        ["ftnd_t","D","Gaussian process model: GP(fsap; t)",
-         "electrons per second"],
-        ["fdt_t","D","Residuals (fsap - ftnd_t)","electrons per second"],
-        ["ftnd_t_roll","D","Gaussian process model: GP(fdt_t; roll)",     
-         "electrons per second"],
-        ["fdt_t_roll","D","Residuals (fdt_t - ftnd_t_roll)",
-         "electrons per second"],
+#        ["ftnd_t","D","Gaussian process model: GP(fsap; t)",
+#         "electrons per second"],
+#        ["fdt_t","D","Residuals (fsap - ftnd_t)","electrons per second"],
+#        ["ftnd_t_roll","D","Gaussian process model: GP(fdt_t; roll)",     
+#         "electrons per second"],
+#        ["fdt_t_roll","D","Residuals (fdt_t - ftnd_t_roll)",
+#         "electrons per second"],
         ["ftnd_t_roll_2D","D","Gaussian process model: GP(fsap; t, roll)",     
          "electrons per second"],
         ["fdt_t_roll_2D","D","Residuals (fsap - ftnd_t_roll_2D)",
