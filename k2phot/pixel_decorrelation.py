@@ -330,14 +330,14 @@ def detrend_t_roll_2D(lc, sigma, length_t, length_roll, sigma_n,
             fdt = lc[fdtkey]
             sig = np.median( np.abs( fdt ) ) * 1.5
             newfdtmask = np.abs( fdt / sig ) > outlier_threshold[iteration]
-            fdtmask = fdtmask | newfdtmask
+            lc.fdtmask = lc.fdtmask | newfdtmask
             
         print "iteration %i, %i/%i excluded from GP" % \
-            (iteration,  fdtmask.sum(), len(fdtmask) )
+            (iteration,  lc.fdtmask.sum(), len(lc.fdtmask) )
 
         # suffix _gp means that it's used for the training
         # no suffix means it's used for the full run
-        lc_gp = lc[~fdtmask] 
+        lc_gp = lc[~lc.fdtmask] 
 
         # Define the GP
         kernel = sigma**2 * kernels.ExpSquaredKernel(
@@ -359,11 +359,10 @@ def detrend_t_roll_2D(lc, sigma, length_t, length_roll, sigma_n,
         mu,cov = gp.predict(lc_gp[Ykey],X_t_rollmed)
         lc['ftnd_t_rollmed'] = mu
         lc['fdt_t_rollmed'] = lc[fdtkey] + mu
-
         iteration+=1
 
     if debug:
-        lc_gp = lc[~fdtmask] 
+        lc_gp = lc[~lc.fdtmask] 
         from matplotlib.pylab import *
         ion()
         fig,axL = subplots(nrows=2,sharex=True)
@@ -420,7 +419,7 @@ def white_noise_estimate(kepmag):
     is white. 
 
     """
-    fac = 10 # Factor by which to inflate Poisson and read noise estimate
+    fac = 2 # Factor by which to inflate Poisson and read noise estimate
     noise_floor = 100e-6 # Do not allow noise estimate to fall below this amount
     
     # Estimate from Poisson and read noise.
@@ -493,12 +492,12 @@ def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np
     # Set the values of the GP hyper parameters
     kepmag = fits.open(pixfile)[0].header['KEPMAG']
     sigma_n = white_noise_estimate(kepmag)
-    tchunk = 4 # split lightcurve in to tchunk-day long segments
+    tchunk = 10 # split lightcurve in to tchunk-day long segments
     nchunks = lc['t'].ptp() / tchunk
     nchunks = int(nchunks)
     sigma = map(lambda x : std(x['f']), np.array_split(lc,nchunks))
     sigma = np.median(sigma)
-    length_t = 2
+    length_t = 4
     length_roll = 10
     lc = detrend_t_roll_2D_segments( 
         lc, sigma, length_t, length_roll,sigma_n, debug=False, 
