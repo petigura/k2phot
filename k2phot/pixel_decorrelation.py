@@ -1,4 +1,3 @@
-
 import os
 from cStringIO import StringIO as sio
 
@@ -340,7 +339,7 @@ def detrend_t_roll_2D(lc, sigma, length_t, length_roll, sigma_n,
         lc_gp = lc[~lc.fdtmask] 
 
         # Define the GP
-        kernel = sigma**2 * kernels.ExpSquaredKernel(
+        kernel = sigma**2 * george.kernels.ExpSquaredKernel(
             [length_t**2,length_roll**2],ndim=2
             ) 
 
@@ -462,7 +461,6 @@ def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np
 
     # Define skeleton light curve. This pandas DataFrame contains all
     # the columns that don't depend on which aperture is used.
-
     im,x,y = read_imagestack(pixfile,tlimits=tlimits,tex=tex)
     lc = im.ts # This is a skeleton light curve
 
@@ -505,10 +503,10 @@ def pixel_decorrelation(pixfile,lcfile,transfile,debug=False,tlimits=[-np.inf,np
         )
 
     fdtmask = lc['fdtmask'].copy() # Save the mask for future runs
-
     # Part 2 
     # Now rerun for different apertures
     dfaper = []
+
     for r in apertures:
         # Set apertures and normalize light curve
         im.set_apertures(x,y,r)

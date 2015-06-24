@@ -9,25 +9,33 @@ from frame import Frame
 import circular_photometry
 from io_utils.pixel import loadPixelFile, get_wcs
 
-
 class ImageStack(object):
-    def __init__(self,fn,tlimits=[-np.inf,-np.inf],tex=None):
-        cube,headers = loadPixelFile(fn,tlimits=tlimits,tex=tex)
-        self.fn = fn
+    def __init__(self,pixfile,tlimits=[-np.inf,-np.inf],tex=None):
+        """
+        Initialize ImageStack Object
+        
+        Parameters
+        ----------
+        pixfile : Target Pixel File (download from the MAST)
+        tlimits : [optional] readin only a segment of data subtracts
+                  of config.bjd0
+        """
+
+        cube,headers = loadPixelFile(pixfile,tlimits=tlimits,tex=tex)
+        self.pixfile = pixfile
         self.headers = headers
         self.flux = cube['FLUX'].astype(float)
         self.t = cube['TIME'].astype(float)
         self.cad = cube['CADENCENO'].astype(int)
 
         # Number of frames, rows, and columns
-        self.nframe,self.nrow,self.ncol = self.flux.shape 
-        self.npix = self.nrow*self.ncol
+        self.nframe, self.nrow, self.ncol = self.flux.shape 
+        self.npix = self.nrow * self.ncol
 
         # Determine background level from median
         self.fbg = self.get_fbackground()
         fbgfit,bgmask = background_mask(self.cad,self.fbg)
         self.bgmask = bgmask
-
 
         ts = [(k,getattr(self,k)) for k in 't cad fbg bgmask'.split()]
         ts = dict(ts)
@@ -126,12 +134,31 @@ class ImageStack(object):
         return frames
 
 def background_mask(cad,fbg,plot=False):
-    """
-    Background Mask
+    """Background Mask
+
+    We subtract the background level from the total flux. Spikes or
+    other data anomalies due to scattered light of bright moving
+    sources or solar activity often lead to outliers in the processed
+    photometry due to over- or under-subtraction. We mask out cadences
+    with unusual background levels.
+
+    Spurious background events are identified via either of the
+    following criteria: 
+
+      1. If the total background level changes by more than 10% of the
+         median value
+
+      2. We fit the overall trend of increasing background levels with
+         a 3rd order polynomial. Then we run a median filter having
+         size of 40 measurements over the background levels with the
+         polynomial trend removed. Then we estimate the typcial rms in
+         the background level ala sigma_bg = 1.5 *
+         MAD(f_bgresidmed). Observations where the filtered background
+         level exceeds sigma_bg by a factor of 10 are masked.
+
     """
     # Background thresh. If the background changes by more than
     # bgthresh of the median value, designate it as an outlier
-
     thresh = 0.1
     
     cad = np.array(cad)
@@ -161,7 +188,6 @@ def background_mask(cad,fbg,plot=False):
 
     # If there are any 10 cadence regions where > 50 % of background
     # is masked, mask out the entire region.
-    
     size = 10
     bgmaskcnt = np.convolve(bgmask,np.ones(size),mode='valid')
     bgmaskgroup = (bgmaskcnt > size/2.)
@@ -187,11 +213,11 @@ def background_mask(cad,fbg,plot=False):
 
 def read_imagestack(pixfile,tlimits=[-np.inf,np.inf],tex=None):
     im = ImageStack(pixfile,tlimits=tlimits,tex=tex)
-    wcs = get_wcs(im.fn)
+    wcs = get_wcs(im.pixfile)
     ra,dec = im.headers[0]['RA_OBJ'],im.headers[0]['DEC_OBJ']
     x,y = wcs.wcs_world2pix(ra,dec,0)
     x = float(x)
     y = float(y)
-    return im,x,y
+    return im, x, y
 
 
