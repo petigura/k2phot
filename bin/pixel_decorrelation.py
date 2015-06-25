@@ -2,7 +2,7 @@
 
 from argparse import ArgumentParser
 import numpy as np
-from k2phot.pixel_decorrelation import pixel_decorrelation
+from k2phot import pipeline
 
 if __name__ == "__main__":
     p = ArgumentParser(description='Pixel Decorrelation')
@@ -30,10 +30,7 @@ if __name__ == "__main__":
 
     tlimits = [args.tmin,args.tmax]
 
-    pixel_decorrelation(
+    pipeline.pipeline(
         args.pixfile, args.lcfile, args.transfile, debug=args.debug,
         tlimits=tlimits, tex=tex
         )
-
-
-

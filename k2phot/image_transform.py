@@ -114,7 +114,7 @@ def ref_to_targ(x1,y1,TM,x1o,y1o,x2o,y2o):
 
 def targ_to_ref(x2,y2,TM,x1o,y1o,x2o,y2o):
     """
-    Reference frame to taget frame
+    Target frame to reference frame
     """
     dx2 = x2-x2o
     dy2 = y2-y2o

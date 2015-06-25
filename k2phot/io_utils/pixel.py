@@ -94,7 +94,7 @@ def loadPixelFile(fn, tlimits=None, bjd0=2454833, tex=None):
 
     assert type(b)==type(np.ones(0)),"Boolean mask must be array"
     cube = cube[b]
-
+    print "tmin = %i, tmax = %i" % tuple(cube['time'][[0,-1]])
     cube['time'][:] = cube['time'] + bjd0
     ret = (cube,) + ([headerToDict(el.header) for el in f],)
 
