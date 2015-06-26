@@ -71,6 +71,8 @@ C1 README_epic_field1_dmc d1435_02_epic_field1_dmc.mrg.gz
 C2 README_d1497_01_epic_c23_dmc d1497_01_epic_c23_dmc.mrg.gz
 C6 README_d14260_01_epic_c6_dmc d14260_01_epic_c6_dmc.mrg.gz
 C7 README_d14260_03_epic_c7_dmc d14260_03_epic_c7_dmc.mrg.gz
+C8 README_d15042_02_epic_c8_dmc d15042_02_epic_c8_dmc.mrg.gz
+C10 README_d15076_02_epic_c10_dmc d15076_02_epic_c10_dmc.mrg.gz
 """
 filenames = pd.read_table(sio(s),sep='\s',index_col=0)
 

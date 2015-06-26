@@ -71,7 +71,7 @@ class PixDecorBase(object):
         dmin['cor'] = dmin['fdt_'+noisename]
         dmin['fac'] = dmin['raw'] / dmin['cor'] *100
 
-        outstr = "Noise Level (%(noisename)s) : Raw = %(raw).1f, Corrected: %(cor).1f, Improvement = %(fac).1f %%" % dmin
+        outstr = "Noise Level (%(noisename)s) : Raw=%(raw).1f (ppm), Corrected=%(cor).1f (ppm); Improvement = %(fac).1f %%" % dmin
         
         return outstr
 

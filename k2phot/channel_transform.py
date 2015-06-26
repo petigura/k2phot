@@ -179,6 +179,13 @@ def get_thrustermask(dtheta):
     """
     Identify thruster fire events.
 
+    Delta theta is the change in telescope roll angle compared to the
+    previous cadence. We establish the typical scatter in delta theta
+    by computing the median absolute deviation of points in regions of
+    100 measurements. We identfy thruster fires as cadences where the
+    change in telescope roll angle exceeds the median absolute
+    deviation by > 15.
+
     Parameters 
     ----------
     dtheta : roll angle for contiguous observations
@@ -186,8 +193,8 @@ def get_thrustermask(dtheta):
     Returns
     -------
     thrustermask : boolean array where True means thruster fire
-    """
 
+    """
     medfiltwid = 10 # Filter width to identify discontinuities in theta
     sigfiltwid = 100 # Filter width to establish local scatter in dtheta
     thresh = 10 # Threshold to call something a thruster fire (units of sigma)
@@ -200,8 +207,21 @@ def get_thrustermask(dtheta):
 
 def trans_add_columns(trans):
     """
-    Add useful columns derived from trans array
+    Add columns to transformation table.
+
+    The A, B, C, and D components of the transformation matrix along
+    with the displacement vector completely specifies the affine
+    transformation. However, it is usually nice to think in terms of
+    scale, skew along x and y, and rotation about the origin. This
+    function casts the matrix in terms of these more useful
+    parameters.
+
+    Parameters
+    ----------
+    trans : record array or pandas data frame with A, B, C, D columns
+    
     """
+
     trans = pd.DataFrame(trans)
     trans['scale'] = np.sqrt(trans.eval('A*D-B*C'))-1 
     trans['scale'][abs(trans['scale']) > 0.1] = None

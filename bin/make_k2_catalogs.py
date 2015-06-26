@@ -12,7 +12,7 @@ k2_camp : K2 Campaign
 """
 
 
-from k2_catalogs import k2cat_sqlfile,k2cat_h5file,read_mast_cat
+from k2phot.io_utils.k2_catalogs import k2cat_sqlfile,k2cat_h5file,read_mast_cat
 
 import sqlite3
 from argparse import ArgumentParser
