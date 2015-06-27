@@ -1,6 +1,7 @@
 import pixdecor
 import plotting
 import numpy as np
+from config import bjd0
 
 def pipeline(pixfn,lcfn,transfn, tlimits=[-np.inf,np.inf],tex=None,debug=False):
     """
@@ -10,7 +11,15 @@ def pipeline(pixfn,lcfn,transfn, tlimits=[-np.inf,np.inf],tex=None,debug=False):
         pixfn, lcfn,transfn, tlimits=tlimits, tex=None
         )
     if debug:
+        npts = len(pixdcr.lc0)
+        idx = [int(0.25*npts),int(0.50*npts)]
+
+        tlimits = [pixdcr.lc0.iloc[i]['t'] - bjd0 for i in idx]
+        pixdcr = pixdecor.PixDecor(
+            pixfn, lcfn,transfn, tlimits=tlimits, tex=None
+        )
         pixdcr.apertures = [3,4]
+
 
     pixdcr.set_hyperparameters()
     pixdcr.reject_outliers()

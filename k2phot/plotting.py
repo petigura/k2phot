@@ -11,7 +11,9 @@ from matplotlib.transforms import blended_transform_factory as btf
 from matplotlib.gridspec import GridSpec
 from mpl_toolkits.axes_grid.anchored_artists import AnchoredText
 from matplotlib.ticker import MaxNLocator
-
+import matplotlib
+from mpl_toolkits.axes_grid1 import host_subplot
+import mpl_toolkits.axisartist as AA
 
 pntskw = dict(marker='.',linestyle='-',alpha=0.8,mew=0,ms=5,mfc='RoyalBlue',color='RoyalBlue')
 legkw = dict(frameon=False,fontsize='x-small',loc='lower left')
@@ -75,16 +77,15 @@ def background(pixdcr):
         t -= config.bjd0
 
     fbg = ma.masked_array(lc['fbg'],lc['bgmask'])
-    plt.rc('lines',linewidth=2)
     plt.plot(t,fbg.data,color='RoyalBlue',label='Background Flux')
     plt.plot(t,fbg,color='Tomato',label='Outliers Removed')
     plt.legend(**legkw)
     plt.ylabel('Background Flux (electrons / s / pixel)')
     plt.xlabel(config.timelabel)
+    plt.title(pixdcr.name_mag())
 
 
  #########
-
 
 @contextlib.contextmanager
 def detrend_titles(pixdcr):
@@ -105,7 +106,6 @@ def lightcurve_detrend_t_roll_2D(lc,zoom=False):
     # Label Axes
     axL = plt.gcf().get_axes()
     plt.xlabel(config.timelabel)
-    plt.setp(axL,ylabel='Flux (electrons/s)')
     flines.set_label('Raw SAP Flux')
     ftndlines.set_label('GP Model, Time and Roll')
     fdtlines.set_label('Detrened Flux')
@@ -118,7 +118,6 @@ def lightcurve_detrend_t_roll_2D(lc,zoom=False):
     plt.legend(**legkw)
     lightcurve_masks(lc)
 
-
 def lightcurve_detrend_t_rollmed(lc,zoom=False):
     keys = 'fsap ftnd_t_rollmed fdt_t_rollmed'.split()
     flines, ftndlines, fdtlines = lightcurve_detrend(lc,keys)
@@ -126,7 +125,6 @@ def lightcurve_detrend_t_rollmed(lc,zoom=False):
     # Label Axes
     axL = plt.gcf().get_axes()
     plt.xlabel(config.timelabel)
-    plt.setp(axL,ylabel='Flux (electrons/s)')
     flines.set_label('Raw SAP Flux')
 
     ftndlines.set_linewidth(0)
@@ -134,7 +132,6 @@ def lightcurve_detrend_t_rollmed(lc,zoom=False):
     for ax in axL:
         plt.sca(ax)
         plt.legend(**legkw)
-
 
 def find_replace_label(label0,label1):
     def myfunc(x):
@@ -146,19 +143,36 @@ def find_replace_label(label0,label1):
         if o.get_label()==label0:
             o.set_label(label1)
 
-
 def detrend(t,f,ftnd,fdt):
+    """
+    Normalize and plot
+    """
     fitkw = dict(alpha=0.8,color='Tomato')
-    fig,axL = plt.subplots(nrows=2,figsize=(12,6),sharex=True,sharey=True)
+    #fig,axL = plt.subplots(nrows=2,figsize=(12,6),sharex=True,sharey=True)
+    fig = plt.figure(figsize=(12,6))
+    
+    ax1 = host_subplot(211, axes_class=AA.Axes)
+    ax2 = host_subplot(212, axes_class=AA.Axes,sharex=ax1)
+    axL = [ax1,ax2]
+
+    y_formatter = matplotlib.ticker.ScalarFormatter(useOffset=False)
+    for ax in axL:
+        ax.yaxis.set_major_formatter(y_formatter)
+        ax.grid()
 
     plt.sca(axL[0])
+
     flines, = plt.plot(t,f,label='Raw',**pntskw)
     ftndlines, = plt.plot(t,ftnd,lw=2,label='Fit',**fitkw)
     plt.ylabel('Flux')
 
     plt.sca(axL[1])
     fdtlines, = plt.plot(t,fdt,label='Resid',**pntskw)
+
     fig.set_tight_layout(True)
+
+        
+
     return flines, ftndlines, fdtlines 
 
 def lightcurve_detrend(lc,keys,zoom=False):
@@ -167,14 +181,27 @@ def lightcurve_detrend(lc,keys,zoom=False):
     if min(t) > 2e6:
         t -= config.bjd0
 
-    f,ftnd,fdt = [lc.get_fm(col) for col in keys]
+    f,ftnd,fdt = [lc.get_col(col,norm=True,maskcol='fmask') for col in keys]
+
     lines = detrend(t,f,ftnd,fdt)
-
-    yl = roblims(lc[keys[1]],5,2)
+    yl = roblims(ftnd.compressed(),5,2)
     if zoom:
-        yl = roblims(lc[keys[2]],5,2)        
-
+        yl = roblims(fdt.compressed(),5,2)        
     plt.ylim(*yl)
+
+    medkeys = [keys[0],keys[2]]
+    axL = plt.gcf().get_axes()
+    for ax,medkey in zip(axL,medkeys):
+        ax2 = ax.twin() 
+        yt = ax.get_yticks()
+        ax2.set_yticks(yt)
+
+        med = ma.median(lc.get_col(medkey,maskcol='fmask'))
+        ax2.set_yticklabels(["%.2e" % s for s in  yt*med])
+        ax2.axis["top"].major_ticklabels.set_visible(False)
+        plt.setp(ax,ylabel='Normalized Flux')
+        plt.setp(ax2,ylabel='Flux (electrons/s)')
+
     return lines
 
 
