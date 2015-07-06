@@ -195,6 +195,34 @@ def read_diag(k2_camp,nbin=20):
     dfdiag = pd.concat(dfdiag)
     return dfdiag
 
+def read_diag_paper(k2_camp):
+    """
+    Read Diagnostic Stars
+
+    For bins in the range of kepmag=[i,i+1] select 
+    
+    """
+    np.random.seed(0)
+    nbin = 100
+    cat = read_cat(k2_camp)
+
+    dfdiag = []
+    kepmagbin = range(8,16)
+
+    for kepmag in kepmagbin:
+        cut = cat[cat.kepmag.between(kepmag,kepmag+1)]
+        ids = np.array(cut.index).copy()
+        np.random.shuffle(ids)
+        if len(cut) > nbin:
+            cut = cut.ix[ids[:nbin]]
+
+        cut['kepmagbin'] = kepmag
+        dfdiag+=[cut]
+
+    dfdiag = pd.concat(dfdiag)
+    return dfdiag
+
+
 def makePixelFileURL(epic, cycle, mode='K2'):
     """Generate the URL for a particular target. 
 
