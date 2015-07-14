@@ -53,7 +53,6 @@ def read_target_list(k2_camp):
         targetsfn = 'K2Campaign2targets.csv'
 
     targetsfn = os.path.join(TARGET_LISTS,targetsfn)
-    import pdb;pdb.set_trace()
 
     if (k2_camp=='C0') or (k2_camp=='C1'):
         targets = pd.read_csv(targetsfn,usecols=[0])
@@ -67,6 +66,7 @@ def read_target_list(k2_camp):
 
 s = """
 k2camp readmefn catalogfn
+C0 README_d14108_01_epic_c0_dmc d14108_01_epic_c0_dmc.mrg.gz
 C1 README_epic_field1_dmc d1435_02_epic_field1_dmc.mrg.gz
 C2 README_d1497_01_epic_c23_dmc d1497_01_epic_c23_dmc.mrg.gz
 C6 README_d14260_01_epic_c6_dmc d14260_01_epic_c6_dmc.mrg.gz
@@ -93,7 +93,11 @@ def read_epic(k2_camp,debug=False):
     readme['name'] = readme.line.apply(lambda x : x.split()[1])
 
     # List of columns to include
-    namemap = {'ID':'epic','RA':'ra','DEC':'dec','Kp':'kepmag'}
+    # namemap = {'ID':'epic','RA':'ra','DEC':'dec','Kp':'kepmag'}
+    namemap = {
+        'ID':'epic','RA':'ra','DEC':'dec','Kp':'kepmag',
+        'Jmag':'jmag','Hmag':'hmag','Kmag':'kmag'
+    }    
 
     # Read in the actual calatog
     readme.index = readme.name

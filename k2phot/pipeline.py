@@ -3,12 +3,14 @@ import plotting
 import numpy as np
 from config import bjd0
 
-def pipeline(pixfn,lcfn,transfn, tlimits=[-np.inf,np.inf],tex=None,debug=False):
+def pipeline(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None, 
+             debug=False, ap_select_tlimits=None):
     """
     Run the pixel decorrelation on pixel file
     """
+
     pixdcr = pixdecor.PixDecor(
-        pixfn, lcfn,transfn, tlimits=tlimits, tex=None
+        pixfn, lcfn,transfn, tlimits=ap_select_tlimits, tex=None
         )
     if debug:
         npts = len(pixdcr.lc0)
@@ -20,10 +22,26 @@ def pipeline(pixfn,lcfn,transfn, tlimits=[-np.inf,np.inf],tex=None,debug=False):
         )
         pixdcr.apertures = [3,4]
 
-
+    pixdcr.set_lc0(3)
     pixdcr.set_hyperparameters()
     pixdcr.reject_outliers()
     pixdcr.scan_aperture_size()
+    dfaper = pixdcr.dfaper
+    dmin = dfaper.iloc[0]
+    
+    pixdcr = pixdecor.PixDecor(
+        pixfn, lcfn,transfn, tlimits=tlimits, tex=None
+        )
+    pixdcr.set_lc0(dmin['r'])
+    pixdcr.set_hyperparameters()
+    pixdcr.reject_outliers()
+
+    # Sub in best-fitting radius from previous iteration
+    pixdcr.dfaper = dfaper
+    pixdcr.dmin = dmin 
+    detrend_dict = pixdcr.detrend_t_roll_2D(dmin['r'])
+    pixdcr.lc = detrend_dict['lc']
+
     pixdcr.to_fits(lcfn)
 
     if 0:

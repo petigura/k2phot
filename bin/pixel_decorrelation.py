@@ -16,6 +16,12 @@ if __name__ == "__main__":
     p.add_argument(
         '--tmax', type=float, default=np.inf,help='Max time'
     )
+    p.add_argument(
+        '--atmin', type=float, default=-np.inf,help='Minimum valid time index'
+    )
+    p.add_argument(
+        '--atmax', type=float, default=np.inf,help='Max time'
+    )
 
     p.add_argument(
         '--tex', type=str, default=None,help='Exclude time range'
@@ -29,8 +35,10 @@ if __name__ == "__main__":
         tex = eval("np.array(%s)" % tex)
 
     tlimits = [args.tmin,args.tmax]
+    ap_select_tlimits = [args.atmin,args.atmax]
 
     pipeline.pipeline(
         args.pixfile, args.lcfile, args.transfile, debug=args.debug,
-        tlimits=tlimits, tex=tex
+        tlimits=tlimits, tex=tex, ap_select_tlimits = ap_select_tlimits
         )
+
