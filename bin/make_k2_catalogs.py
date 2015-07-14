@@ -25,7 +25,6 @@ if __name__=='__main__':
     args = p.parse_args()
     k2_camp = args.k2_camp
     df = read_mast_cat(k2_camp)
-
     print "Dumping whole catalog to %s, %s" % (k2cat_h5file,k2_camp)
     df.to_hdf(k2cat_h5file,k2_camp)
 

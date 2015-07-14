@@ -152,12 +152,6 @@ def total_precision_theory(kepmag,Na):
     
     twd = number of candences used in running box.
 
-    rms_1_cad_mean = 1.0
-    rms_1_cad_mtd = sqrt(3/2) = 1.225 (extra noise from measuring the
-                                       depths of the wings)
-    rms_4_cad_mean = 0.500007 divide by sqrt(twd)
-    mad_1_cad_mean = 0.674639 to convert from rms to mad divide by 1.5
-
     """
     Nfr = 270 # Number of frames used in exposure (loncadence) 
     tint = 6.02 # Seconds in an integration
@@ -167,3 +161,34 @@ def total_precision_theory(kepmag,Na):
     denom = sqrt(Nfr) * fkep* tint
     precision = numer/denom
     return precision
+
+
+def background_noise(kepmag,Na,fbg):  
+    """
+    kepmag : Kepler magnitude
+    Na : number of pixels in the aperture
+    fbg : nominal value for background flux. e-/s/pixel
+    """
+
+    Nfr = 270 # Number of frames used in exposure (loncadence) 
+    tint = 6.02 # Seconds in an integration
+    sourceflux = kepmag_to_flux(kepmag) * tint * Nfr
+    bgflux = fbg * tint * Nfr * Na
+    bgnoise = np.sqrt(bgflux) / sourceflux
+    return bgnoise
+
+
+def convert_rms_to_mad_6_cad_mtd(rms):
+    """
+    rms_1_cad_mean = 1.0
+    rms_1_cad_mtd = sqrt(3/2) = 1.225 (extra noise from measuring the
+                                       depths of the wings)
+    rms_4_cad_mean = 0.500007 divide by sqrt(twd)
+    mad_1_cad_mean = 0.674639 to convert from rms to mad divide by 1.5
+    """
+
+    # 
+    out = sqrt(3/2) * rms # accounts for wings
+    out /= sqrt(6) # Account for larger width 
+    out *= 0.674639 # RMS -> MAD
+    return out

@@ -9,7 +9,7 @@ import george
 from pdplus import LittleEndian
 from imagestack import ImageStack, read_imagestack
 from channel_transform import read_channel_transform
-from config import bjd0, noisekey, noisename
+from config import bjd0, noisekey, noisename, rbg
 
 from ses import total_precision_theory
 from astropy.io import fits
@@ -133,9 +133,7 @@ class PixDecor(PixDecorBase):
 
     Facilitates the creation of K2 photometry and diagnostic plots
     """
-    
-    apertures = range(2,8)
-    r0 = 3 # Radius of aperture used for skeleton lightcurve
+
     unnormkeys = [
         "f",
         "fdt_t_roll_2D",
@@ -144,30 +142,40 @@ class PixDecor(PixDecorBase):
         "ftnd_t_rollmed",
     ]
 
-    def __init__(self,pixfn,lcfn,transfn,
-                 tlimits=[-np.inf,np.inf],tex=None):
-
+    def __init__(self, pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], 
+                 tex=None):
         self.pixfn = pixfn
         self.lcfn = lcfn
         self.transfn = transfn
         self.kepmag = fits.open(pixfn)[0].header['KEPMAG']
         self.basename = os.path.splitext(lcfn)[0]
         self.starname = os.path.basename(self.basename)
+        self.apertures = kepmag_to_apertures(self.kepmag)
 
         # Define skeleton light curve. This pandas DataFrame contains all
         # the columns that don't depend on which aperture is used.
         im,x,y = read_imagestack(pixfn,tlimits=tlimits,tex=tex)
-
         self.x = x
         self.y = y
         self.im = im 
 
+    def set_lc0(self,r0):
+        """
+        Set Skeleton Lightcurve
+
+        Parameters
+        ----------
+        r0 : radius of aperture used to create skeleton light curve
+        """
         # Define skeleton light-curve
         # Include pixel transformation information 
-        lc = im.ts 
-        trans,pnts = read_channel_transform(transfn)
-        trans['roll'] = trans['theta'] * 2e5
+        self.im.set_apertures(self.x,self.y,rbg)
+        self.im.set_fbackground(rbg)
+        self.r0 = r0
 
+        lc = self.im.ts 
+        trans,pnts = read_channel_transform(self.transfn)
+        trans['roll'] = trans['theta'] * 2e5
         # Hack select a representative star to use for x-y position 
         sqdist = (
             (np.median(pnts['x'],axis=1) - 500)**2 +
@@ -179,9 +187,7 @@ class PixDecor(PixDecorBase):
         pnts['ypr'] = pnts500['ypr']
 
         trans = pd.concat([trans,pnts],axis=1)
-
-        self.set_apertures(self.r0)
-        lc['fsap'] = im.get_sap_flux()
+        lc['fsap'] = self.im.get_sap_flux()
         norm = Normalizer(lc['fsap'].median())
         lc['f'] = norm.norm(lc['fsap'])
         lc = pd.merge(trans,lc,on='cad')
@@ -288,6 +294,19 @@ class PixDecor(PixDecorBase):
         plt.savefig(figpath,dpi=160)
         plt.close('all')
         print "created %s " % figpath
+
+def kepmag_to_apertures(kepmag):
+    """
+    Given the kepmag of given target star, what range of apertures do
+    we want to search over?
+    """
+    if 0 <= kepmag < 10:
+        apertures = range(3,8)
+    elif 10 <= kepmag < 14:
+        apertures = [1.0, 1.4, 2.0, 3, 4, 5, 6, 8 ]
+    elif 14 <= kepmag < 25:
+        apertures = [1.0, 1.4, 2.0, 3, 4]
+    return apertures
 
 def white_noise_estimate(kepmag):
     """

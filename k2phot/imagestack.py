@@ -8,6 +8,7 @@ import pandas as pd
 from frame import Frame
 import circular_photometry
 from io_utils.pixel import loadPixelFile, get_wcs
+from circular_photometry import circular_photometry_weights
 
 class ImageStack(object):
     def __init__(self,pixfile,tlimits=[-np.inf,-np.inf],tex=None):
@@ -32,15 +33,22 @@ class ImageStack(object):
         self.nframe, self.nrow, self.ncol = self.flux.shape 
         self.npix = self.nrow * self.ncol
 
-        # Determine background level from median
-        self.fbg = self.get_fbackground()
-        fbgfit,bgmask = background_mask(self.cad,self.fbg)
-        self.bgmask = bgmask
-
-        ts = [(k,getattr(self,k)) for k in 't cad fbg bgmask'.split()]
+        ts = [(k,getattr(self,k)) for k in 't cad'.split()]
         ts = dict(ts)
         self.ts = pd.DataFrame(ts)
         self.tlimits = tlimits
+
+    def get_xy_from_header(self):
+        """
+        Get x,y position of the target star from the header WCS
+        """
+        
+        wcs = get_wcs(self.pixfile)
+        ra,dec = self.headers[0]['RA_OBJ'],self.headers[0]['DEC_OBJ']
+        x,y = wcs.wcs_world2pix(ra,dec,0)
+        x = float(x)
+        y = float(y)
+        return x,y
 
     def set_apertures(self,locx,locy,radius):
         """
@@ -51,22 +59,33 @@ class ImageStack(object):
                     (len(locy)==self.nframe) ), "Must have same length as array"
 
         self.radius = radius
+        self.locx = locx
+        self.locy = locy
         self.ts['locx'] = locx
         self.ts['locy'] = locy
+        self.ap_weights = self.get_ap_weights(radius)
 
-        def get_ap_weights(locx,locy):
-            positions = np.array([[locx,locy]])
-            return circular_photometry.circular_photometry_weights(
-                self.flux[0],positions,radius)
-            
-        ap_weights = map(get_ap_weights,self.ts.locx,self.ts.locy)
-        ap_weights = np.array(ap_weights)
-        self.ap_weights = ap_weights
+    def get_ap_weights(self,radius):
+        ap_weights = np.zeros(self.flux.shape)
+        positions = np.array([[self.locx,self.locy]])
+        for i in range(self.nframe):
+            ap_weights[i] = circular_photometry_weights(
+                self.flux[0],positions,radius
+            )
+        return ap_weights
         
-    def get_fbackground(self):
-        flux = self.flux.reshape(-1,self.npix)
-        fbackground = np.median(flux,axis=1)
-        return fbackground
+    def set_fbackground(self,radius):
+        ap_weights = self.get_ap_weights(radius)
+        flux = ma.masked_array(self.flux,fill_value=0)
+        flux.mask = False
+        flux.mask[ap_weights > 0] = True # If included in aperture, mask out
+        flux.mask = flux.mask | np.isnan(flux.data)
+        flux = flux.reshape(-1,self.npix)
+        self.fbg = np.array(ma.median(flux,axis=1))
+        fbgfit,bgmask = background_mask(self.cad,self.fbg)
+        self.bgmask = bgmask
+        self.ts['fbg'] = self.fbg
+        self.ts['bgmask'] = self.bgmask
 
     def get_sap_flux(self):
         """
@@ -213,11 +232,7 @@ def background_mask(cad,fbg,plot=False):
 
 def read_imagestack(pixfile,tlimits=[-np.inf,np.inf],tex=None):
     im = ImageStack(pixfile,tlimits=tlimits,tex=tex)
-    wcs = get_wcs(im.pixfile)
-    ra,dec = im.headers[0]['RA_OBJ'],im.headers[0]['DEC_OBJ']
-    x,y = wcs.wcs_world2pix(ra,dec,0)
-    x = float(x)
-    y = float(y)
+    x,y = im.get_xy_from_header()
     return im, x, y
 
 
