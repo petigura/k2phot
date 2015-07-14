@@ -300,11 +300,11 @@ def kepmag_to_apertures(kepmag):
     Given the kepmag of given target star, what range of apertures do
     we want to search over?
     """
-    if kepmag < 10:
+    if 0 <= kepmag < 10:
         apertures = range(3,8)
-    elif kepmag < 14:
+    elif 10 <= kepmag < 14:
         apertures = [1.0, 1.4, 2.0, 3, 4, 5, 6, 8 ]
-    elif kepmag > 15:
+    elif 14 <= kepmag < 25:
         apertures = [1.0, 1.4, 2.0, 3, 4]
     return apertures
 
