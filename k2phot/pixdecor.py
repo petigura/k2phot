@@ -285,7 +285,7 @@ class PixDecor(PixDecorBase):
         plt.figure() # Executes before code block
         yield # Now run the code block
         figpath = self.basename+suffix
-        plt.savefig(figpath)
+        plt.savefig(figpath,dpi=160)
         plt.close('all')
         print "created %s " % figpath
 
