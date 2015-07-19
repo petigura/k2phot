@@ -22,13 +22,13 @@ from astropy import units as u
 from astropy.coordinates import Longitude,Latitude
 from astropy.io import fits
 import h5py
+import re
 
 import numpy as np
 from ..config import K2PHOTFILES,K2PHOT_DIR
 
 k2cat_sqlfile = os.path.join(K2PHOTFILES,'catalogs/k2_catalogs.sqlite')
 k2cat_h5file = os.path.join(K2PHOTFILES,'catalogs/k2_catalogs.h5')
-
 MAST_CATALOGS = os.path.join(K2PHOTFILES,'mast_catalogs/')
 TARGET_LISTS = os.path.join(K2PHOTFILES,'target_lists/')
 
@@ -45,30 +45,34 @@ def read_mast_cat(k2_camp,debug=False):
     return cat
 
 def read_target_list(k2_camp):
-    if k2_camp=='C0':
-        targetsfn = 'K2Campaign0targets.csv'
-    elif k2_camp=='C1':
-        targetsfn = 'K2Campaign1targets.csv'
-    elif k2_camp=='C2':
-        targetsfn = 'K2Campaign2targets.csv'
+    """
+    Read Target Lists
 
+    http://keplerscience.arc.nasa.gov/K2/GuestInvestigationsC03.shtml
+
+    Reads the csv files with the target lists from each campagin
+    """
+
+    targetsfn = 'K2Campaign%itargets.csv' % int(k2_camp[1:])
     targetsfn = os.path.join(TARGET_LISTS,targetsfn)
 
-    if (k2_camp=='C0') or (k2_camp=='C1'):
+    if re.compile('C0|C1|C3').match(k2_camp):
         targets = pd.read_csv(targetsfn,usecols=[0])
         targets = targets.rename(columns={'EPIC ID':'epic'})
-    elif (k2_camp=='C2'):
+    elif re.compile('C2').match(k2_camp):
         targets = pd.read_csv(targetsfn,usecols=[0],names=['epic'])
+    else:
+        assert False,"read_target_list: include k2_campagin"
+
 
     return targets
-
-
 
 s = """
 k2camp readmefn catalogfn
 C0 README_d14108_01_epic_c0_dmc d14108_01_epic_c0_dmc.mrg.gz
 C1 README_epic_field1_dmc d1435_02_epic_field1_dmc.mrg.gz
 C2 README_d1497_01_epic_c23_dmc d1497_01_epic_c23_dmc.mrg.gz
+C3 README_d1497_01_epic_c23_dmc d1497_01_epic_c23_dmc.mrg.gz
 C6 README_d14260_01_epic_c6_dmc d14260_01_epic_c6_dmc.mrg.gz
 C7 README_d14260_03_epic_c7_dmc d14260_03_epic_c7_dmc.mrg.gz
 C8 README_d15042_02_epic_c8_dmc d15042_02_epic_c8_dmc.mrg.gz
@@ -79,7 +83,6 @@ filenames = pd.read_table(sio(s),sep='\s',index_col=0)
 def read_epic(k2_camp,debug=False):
     assert k2_camp in filenames.index, \
         "readmefn and/or catalogfn not defined for %s " % k2_camp
-    
     readmefn = filenames.ix[k2_camp,'readmefn']
     readmefn = os.path.join( MAST_CATALOGS , readmefn )
     catalogfn = filenames.ix[k2_camp,'catalogfn']
@@ -198,6 +201,28 @@ def read_diag(k2_camp,nbin=20):
 
     dfdiag = pd.concat(dfdiag)
     return dfdiag
+
+def make_k2_catalog(k2_camp):
+    """
+    Make Catalog
+
+    Reads in EPIC catalog and target lists to create databases for
+    quick access to K2 catalogs.
+
+    Parameters
+    ----------
+    k2_camp : K2 Campaign 
+    """
+    df = read_mast_cat(k2_camp)
+    print "Dumping whole catalog to %s, %s" % (k2cat_h5file,k2_camp)
+    print df.info()
+    df.to_hdf(k2cat_h5file,k2_camp)
+
+    print "Dumping convenience database to %s, %s" % (k2cat_sqlfile,k2_camp)
+    con = sqlite3.connect(k2cat_sqlfile)
+    df = df[df.target]
+    df.to_sql(k2_camp,con,if_exists='replace',index=False)
+    print df.info()
 
 def read_diag_paper(k2_camp):
     """
