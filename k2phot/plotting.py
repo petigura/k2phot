@@ -234,19 +234,15 @@ def lightcurve_masks(lc):
         plt.plot(x,y,'|',ms=4,mew=2,transform=trans,color=color,label=k)
 
 def lightcurve_segments(lc0):
-    """
-    
-    """
-
-
     nseg = 8
     nrows = 4
-
-    fig = plt.figure(figsize=(12,8))
+    fig = plt.figure(figsize=(18,10))
     gs = GridSpec(nrows,nseg)
-    
-    
     lc_segments = np.array_split(lc0,nseg)
+    plt.rc('lines',markersize=6,markeredgewidth=0)
+    def plot(*args,**kwargs):
+        plt.plot(*args,alpha=0.5,**kwargs)
+
     for i in range(nseg):
         if i==0:
             ax0L = [fig.add_subplot(gs[j,0]) for j in range(nrows)]
@@ -277,25 +273,24 @@ def lightcurve_segments(lc0):
         fdt = lc.get_fm('ftnd_t_roll_2D')
         
         plt.sca(axiL[0])
-        plt.plot(lc['t'],lc['roll'])
+        plot(lc['t'],lc['roll'])
 
         plt.sca(axiL[1])
-        plt.plot(lc['roll'],fm,'.')
-        plt.plot(lc['roll'],fdt,'.')
+        plot(lc['roll'],fm,'.')
+        plot(lc['roll'],fdt,'.')
 
         plt.sca(axiL[2])
-        plt.plot(lc['t'],lc['roll'])
+        plot(lc['t'],lc['roll'])
 
         plt.sca(axiL[3])
         
         xpr = lc.get_fm('xpr')
         ypr = lc.get_fm('ypr')
-        plt.plot(xpr,ypr,'.')
+        plot(xpr,ypr,'.')
 
     fig.subplots_adjust(
-        left=0.05, right=0.99, top=0.99, bottom=0.05, hspace=0.01, wspace=0.01
+        left=0.05, right=0.99, top=0.99, bottom=0.05, hspace=0.001, wspace=0.001
     )
-    
 
 
 def diag(dv,tpar=False):
