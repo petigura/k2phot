@@ -11,7 +11,7 @@ from io_utils.pixel import loadPixelFile, get_wcs
 from circular_photometry import circular_photometry_weights
 
 class ImageStack(object):
-    def __init__(self,pixfile,tlimits=[-np.inf,-np.inf],tex=None):
+    def __init__(self,pixfile,tlimits=[-np.inf,np.inf],tex=None):
         """
         Initialize ImageStack Object
         
@@ -75,6 +75,11 @@ class ImageStack(object):
         return ap_weights
         
     def set_fbackground(self,radius):
+        if 0:
+            from matplotlib.pylab import *
+            ion()
+            import pdb;pdb.set_trace()
+
         ap_weights = self.get_ap_weights(radius)
         flux = ma.masked_array(self.flux,fill_value=0)
         flux.mask = False
@@ -178,7 +183,7 @@ def background_mask(cad,fbg,plot=False):
     """
     # Background thresh. If the background changes by more than
     # bgthresh of the median value, designate it as an outlier
-    thresh = 0.1
+    thresh = 2
     
     cad = np.array(cad)
     fbg = np.array(fbg)
@@ -217,12 +222,14 @@ def background_mask(cad,fbg,plot=False):
         
     print "bgmask=True for %i of %i cadences" % (bgmask.sum(),bgmask.size)
 
+    plot=1
     if plot:
         plt.plot(cad,fbg)
         plt.plot(cad,fbgfit)
         plt.plot(cad,mfbg)
         plt.plot(cad,bgresid)
         plt.plot(cad,bgresidmed)
+        plt.plot(cad,ma.masked_array(fbg,bgmask),label='fbg outliers removed')
         plt.plot(cad[:cad.size-size+1],bgmaskcnt,label='bgmaskcnt')
         yl = np.percentile(fbg,[5,95])
         yl += (np.array([-1,1]) * yl.ptp()*0.5)

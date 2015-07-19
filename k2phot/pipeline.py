@@ -49,7 +49,6 @@ def pipeline(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
         from matplotlib import pylab as plt
         plt.ion()
         plt.figure()
-        plotting.plot_medframe(pixdcr)
         import pdb;pdb.set_trace()
 
     with pixdcr.FigureManager('_0-median-frame.png'):

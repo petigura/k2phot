@@ -412,7 +412,6 @@ def detrend_t_roll_2D(lc, sigma, length_t, length_roll, sigma_n,
         fig = figure()
         plot(lc_gp['roll'],lc_gp['f'],'.')
         plot(lc_gp['roll'],lc_gp['ftnd_t_roll_2D'],'.')
-
         import pdb;pdb.set_trace()
 
     return lc
