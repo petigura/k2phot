@@ -12,6 +12,8 @@ def pipeline(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
     pixdcr = pixdecor.PixDecor(
         pixfn, lcfn,transfn, tlimits=ap_select_tlimits, tex=None
         )
+    pixdcr.set_lc0(3)
+
     if debug:
         npts = len(pixdcr.lc0)
         idx = [int(0.25*npts),int(0.50*npts)]
@@ -21,8 +23,7 @@ def pipeline(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
             pixfn, lcfn,transfn, tlimits=tlimits, tex=None
         )
         pixdcr.apertures = [3,4]
-
-    pixdcr.set_lc0(3)
+        pixdcr.set_lc0(3)
     pixdcr.set_hyperparameters()
     pixdcr.reject_outliers()
     pixdcr.scan_aperture_size()
