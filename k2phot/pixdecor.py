@@ -274,8 +274,8 @@ class PixDecor(PixDecorBase):
         return detrend_dict
 
     def get_diagnostic_info(self, d):
-        sdisp = self.starname+" "
-        sdisp += "r=%(r)i " % d
+        sdisp = "starname=%s " % self.starname
+        sdisp += "r=%(r).1f " % d
 
         for k in "f fdt".split():
             k = k+'_'+noisename

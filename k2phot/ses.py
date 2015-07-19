@@ -78,9 +78,6 @@ def running_mean(fm,size):
 def ses_stats(fm):
     """
     Given a light curve what is the noise level on different timescales?
-
-    In the limit of white noise:
-    MAD = RMS / 1.5
     
     The MTD statistic gives higher noise than RMS because there are
     uncertanties associated with measuring the wings.
@@ -91,7 +88,7 @@ def ses_stats(fm):
     dfses = []
 
     def ma_mad(x):
-        fom = ma.median(ma.abs(x))
+        fom = 1.48 * ma.median(ma.abs(x))
         if type(fom)==type(fm):
             fom = float(fom)
         return fom
