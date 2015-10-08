@@ -101,6 +101,50 @@ def loadPixelFile(fn, tlimits=None, bjd0=2454833, tex=None):
     f.close()
     return ret
 
+def postage_stamp( pixFileIn, pixFileOut, ncolstamp=20 , nrowstamp=20):
+    f = fits.open(pixFileIn)
+    xcen, ycen = get_star_pos(pixFileIn)
+    xcen = int(xcen)
+    ycen = int(ycen)
+    colslice = slice(xcen-ncolstamp/2,xcen+ncolstamp/2)
+    rowslice = slice(ycen-nrowstamp/2,ycen+nrowstamp/2)
+    
+
+
+    hdu0 = f[0]
+    hdu1 = f[1]
+    hdu2 = f[2]
+
+    # Update first record
+    cutcol = 'RAW_CNTS FLUX FLUX_ERR FLUX_BKG FLUX_BKG_ERR COSMIC_RAYS'.split()
+    new_column_list = []
+    hdu1_new_header = hdu1.header
+
+    for col in hdu1.columns:
+        if cutcol.count(col.name)==1:
+            data = hdu1.data[col.name][:,rowslice,colslice]
+            dim = str(data[0].shape)
+            
+        else:
+            data = hdu1.data[col.name]
+            dim = col.dim
+
+        new_column = fits.Column(
+            name=col.name, format=col.format, unit=col.unit, disp=col.disp, 
+            array=data, dim=dim
+            )
+        new_column_list += [new_column] 
+
+    hdu1_new = fits.BinTableHDU.from_columns(new_column_list)
+    hdu1_new.header = hdu1.header
+    # Update second record
+    hdu2.data = hdu2.data[rowslice,colslice]
+    hdu2.header['CRPIX1'] -= colslice.start 
+    hdu2.header['CRPIX2'] -= rowslice.start
+
+    hduL = fits.HDUList([hdu0,hdu1_new,hdu2])
+    hduL.writeto(pixFileOut,clobber=True)
+
 def parse_bits(quality):
     """
     Takes quality area and splits the bits up
