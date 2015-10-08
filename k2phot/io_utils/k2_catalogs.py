@@ -56,7 +56,7 @@ def read_target_list(k2_camp):
     targetsfn = 'K2Campaign%itargets.csv' % int(k2_camp[1:])
     targetsfn = os.path.join(TARGET_LISTS,targetsfn)
 
-    if re.compile('C0|C1|C3').match(k2_camp):
+    if re.compile('C0|C1|C3|C4').match(k2_camp):
         targets = pd.read_csv(targetsfn,usecols=[0])
         targets = targets.rename(columns={'EPIC ID':'epic'})
     elif re.compile('C2').match(k2_camp):
@@ -73,6 +73,7 @@ C0 README_d14108_01_epic_c0_dmc d14108_01_epic_c0_dmc.mrg.gz
 C1 README_epic_field1_dmc d1435_02_epic_field1_dmc.mrg.gz
 C2 README_d1497_01_epic_c23_dmc d1497_01_epic_c23_dmc.mrg.gz
 C3 README_d1497_01_epic_c23_dmc d1497_01_epic_c23_dmc.mrg.gz
+C4 README_d14184_01_epic_c245_dmc d14184_01_epic_c245_dmc.mrg.gz
 C6 README_d14260_01_epic_c6_dmc d14260_01_epic_c6_dmc.mrg.gz
 C7 README_d14260_03_epic_c7_dmc d14260_03_epic_c7_dmc.mrg.gz
 C8 README_d15042_02_epic_c8_dmc d15042_02_epic_c8_dmc.mrg.gz
@@ -80,21 +81,45 @@ C10 README_d15076_02_epic_c10_dmc d15076_02_epic_c10_dmc.mrg.gz
 """
 filenames = pd.read_table(sio(s),sep='\s',index_col=0)
 
+
+class Reader(object):
+    def __init__(self,k2_camp):
+        assert k2_camp in filenames.index, \
+            "readmefn and/or catalogfn not defined for %s " % k2_camp
+        readmefn = filenames.ix[k2_camp,'readmefn']
+        readmefn = os.path.join( MAST_CATALOGS , readmefn )
+        catalogfn = filenames.ix[k2_camp,'catalogfn']
+        catalogfn = os.path.join(MAST_CATALOGS,catalogfn)
+
+        # Read in the column descriptors
+        readme = pd.read_table(readmefn ,header=None, names=['line'])
+        readme = readme[readme.line.str.contains('^#\d{1}')==True]
+        readme['col'] = readme.line.apply(
+            lambda x : x.split()[0][1:]).astype(int)
+        readme['name'] = readme.line.apply(lambda x : x.split()[1])
+
+        self.readme = readme
+        self.catalogfn = catalogfn
+        self.readmefn = readmefn
+
+def query_epic(k2_camp,epic):
+    """
+    Read all the epic columns from a specific file.
+    """
+    reader = Reader(k2_camp)
+    kw = dict(compression='gzip',sep='|',header=None,)
+    print "reading in gzipped catalog, takes ~20s"
+    df = pd.read_table(reader.catalogfn, usecols=[0], **kw)
+    idx = np.where(df[0]==epic)[0][0]
+    df = pd.read_table(reader.catalogfn, skiprows=idx,nrows=1, **kw)
+    df = df.T
+    df['col'] = np.arange(1,len(df)+1)
+    df = pd.merge(df,reader.readme['col name'.split()],on='col')
+    return df
+
 def read_epic(k2_camp,debug=False):
-    assert k2_camp in filenames.index, \
-        "readmefn and/or catalogfn not defined for %s " % k2_camp
-    readmefn = filenames.ix[k2_camp,'readmefn']
-    readmefn = os.path.join( MAST_CATALOGS , readmefn )
-    catalogfn = filenames.ix[k2_camp,'catalogfn']
-    catalogfn = os.path.join(MAST_CATALOGS,catalogfn)
-
-    # Read in the column descriptors
-    readme = pd.read_table(readmefn ,header=None, names=['line'])
-    readme = readme[readme.line.str.contains('^#\d{1}')==True]
-    readme['col'] = readme.line.apply(
-        lambda x : x.split()[0][1:]).astype(int)
-    readme['name'] = readme.line.apply(lambda x : x.split()[1])
-
+    reader = Reader(k2_camp)
+    
     # List of columns to include
     # namemap = {'ID':'epic','RA':'ra','DEC':'dec','Kp':'kepmag'}
     namemap = {
@@ -103,6 +128,7 @@ def read_epic(k2_camp,debug=False):
     }    
 
     # Read in the actual calatog
+    readme = reader.readme
     readme.index = readme.name
     cut = readme.ix[namemap.keys()]
     cut['newname'] = namemap.values()
@@ -116,8 +142,8 @@ def read_epic(k2_camp,debug=False):
         nrows = None
 
     cat = pd.read_table(
-        catalogfn, sep='|', names=cut.newname, header=None, usecols=usecols,
-        compression='gzip', nrows=nrows
+        reader.catalogfn, sep='|', names=cut.newname, header=None, 
+        usecols=usecols, compression='gzip', nrows=nrows
         )
 
     return cat
