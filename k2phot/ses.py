@@ -150,7 +150,7 @@ def total_precision_theory(kepmag,Na):
     twd = number of candences used in running box.
 
     """
-    Nfr = 270 # Number of frames used in exposure (loncadence) 
+    Nfr = 270 # Number of frames used in exposure (long cadence) 
     tint = 6.02 # Seconds in an integration
     NR = 120 # Readnoise e-
     fkep = kepmag_to_flux(kepmag)

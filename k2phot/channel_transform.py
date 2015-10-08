@@ -14,7 +14,7 @@ from scipy import ndimage as nd
 import image_transform as imtran
 from io_utils.pixel import get_wcs
 from io_utils import h5plus
-
+from config import bjd0 
 def channel_transform(fitsfiles, h5file, iref= None):
     """
     Channel Transformation
@@ -260,24 +260,24 @@ def read_channel_transform(h5file):
     trans['thrustermask'] = get_thrustermask(trans['dtheta'])
     return trans,pnts
 
-def plot_trans(trans):
+def plot_trans(trans,pnts):
     """
     Diagnostic plot that shows different transformation parameters
     """
+    t = pnts[0]['t']
     keys = 'scale theta skew1 skew2'.split()
     nrows = 5
     fig,axL = plt.subplots(nrows=nrows,figsize=(20,8),sharex=True)
     fig.set_tight_layout(True)
     for i,key in enumerate(keys):
         plt.sca(axL[i])
-        plt.plot(trans[key])
+        plt.plot(t,trans[key])
         plt.ylabel(key)
         
     plt.sca(axL[4])
     dtheta = np.array(trans['dtheta'])
     thrustermask = np.array(trans['thrustermask'])
-    plt.plot(dtheta,'-',mew=0)
+    plt.plot(t,dtheta,'-',mew=0)
     plt.ylabel('$\Delta$ theta')
-    plt.xlabel('Observation')
-    i = np.arange(len(dtheta))
-    plt.plot(i[thrustermask],dtheta[thrustermask],'.')
+    plt.xlabel('Time BJD - %i' % bjd0)
+    plt.plot(t[thrustermask],dtheta[thrustermask],'.')
