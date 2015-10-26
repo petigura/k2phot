@@ -108,7 +108,7 @@ def lightcurve_detrend_t_roll_2D(lc,zoom=False):
     plt.xlabel(config.timelabel)
     flines.set_label('Raw SAP Flux')
     ftndlines.set_label('GP Model, Time and Roll')
-    fdtlines.set_label('Detrened Flux')
+    fdtlines.set_label('Detrended Flux')
     
     plt.sca(axL[0])
     lightcurve_masks(lc)
@@ -127,7 +127,9 @@ def lightcurve_detrend_t_rollmed(lc,zoom=False):
     plt.xlabel(config.timelabel)
     flines.set_label('Raw SAP Flux')
 
+
     ftndlines.set_linewidth(0)
+
     fdtlines.set_label('Detrened Flux')
     for ax in axL:
         plt.sca(ax)
@@ -171,7 +173,7 @@ def detrend(t,f,ftnd,fdt):
 
     fig.set_tight_layout(True)
 
-        
+    ax.set_axisbelow(True)    
 
     return flines, ftndlines, fdtlines 
 
@@ -193,14 +195,23 @@ def lightcurve_detrend(lc,keys,zoom=False):
     axL = plt.gcf().get_axes()
     for ax,medkey in zip(axL,medkeys):
         ax2 = ax.twin() 
-        yt = ax.get_yticks()
-        ax2.set_yticks(yt)
+        yt = ax.get_yticks() # Get values of the left y-axis
+        ax2.set_yticks(yt) # Copy into the right y-axis
 
+        # Convert into electrons per-second
         med = ma.median(lc.get_col(medkey,maskcol='fmask'))
-        ax2.set_yticklabels(["%.2e" % s for s in  yt*med])
+        yt2 = yt * med
+
+        # Determine the exponent
+        yt2max = yt2[-1] 
+        exponent = int(np.log10(yt2max))
+        yt2 /= (10**exponent)
+        yt2 = ["%.2f" % s for s in  yt2]
+        
+        ax2.set_yticklabels(yt2) 
         ax2.axis["top"].major_ticklabels.set_visible(False)
         plt.setp(ax,ylabel='Normalized Flux')
-        plt.setp(ax2,ylabel='Flux (electrons/s)')
+        plt.setp(ax2,ylabel='Flux (10^%i electrons/s)' % exponent )
 
     return lines
 
