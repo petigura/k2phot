@@ -160,7 +160,7 @@ def detrend(t,f,ftnd,fdt):
     y_formatter = matplotlib.ticker.ScalarFormatter(useOffset=False)
     for ax in axL:
         ax.yaxis.set_major_formatter(y_formatter)
-        ax.grid()
+        ax.grid(zorder=0)
 
     plt.sca(axL[0])
 
@@ -172,8 +172,6 @@ def detrend(t,f,ftnd,fdt):
     fdtlines, = plt.plot(t,fdt,label='Resid',**pntskw)
 
     fig.set_tight_layout(True)
-
-    ax.set_axisbelow(True)    
 
     return flines, ftndlines, fdtlines 
 
