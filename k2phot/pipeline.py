@@ -24,6 +24,8 @@ def pipeline(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
         )
         pixdcr.apertures = [3,4]
         pixdcr.set_lc0(3)
+
+    pixdcr.apertures = [1.5,2.0,]
     pixdcr.set_hyperparameters()
     pixdcr.reject_outliers()
     pixdcr.scan_aperture_size()

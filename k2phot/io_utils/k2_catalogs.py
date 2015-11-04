@@ -56,7 +56,7 @@ def read_target_list(k2_camp):
     targetsfn = 'K2Campaign%itargets.csv' % int(k2_camp[1:])
     targetsfn = os.path.join(TARGET_LISTS,targetsfn)
 
-    if re.compile('C0|C1|C3|C4').match(k2_camp):
+    if re.compile('C0|C1|C3|C4|C5').match(k2_camp):
         targets = pd.read_csv(targetsfn,usecols=[0])
         targets = targets.rename(columns={'EPIC ID':'epic'})
     elif re.compile('C2').match(k2_camp):
@@ -74,6 +74,7 @@ C1 README_epic_field1_dmc d1435_02_epic_field1_dmc.mrg.gz
 C2 README_d1497_01_epic_c23_dmc d1497_01_epic_c23_dmc.mrg.gz
 C3 README_d1497_01_epic_c23_dmc d1497_01_epic_c23_dmc.mrg.gz
 C4 README_d14184_01_epic_c245_dmc d14184_01_epic_c245_dmc.mrg.gz
+C5 README_d14184_01_epic_c245_dmc d14184_01_epic_c245_dmc.mrg.gz
 C6 README_d14260_01_epic_c6_dmc d14260_01_epic_c6_dmc.mrg.gz
 C7 README_d14260_03_epic_c7_dmc d14260_03_epic_c7_dmc.mrg.gz
 C8 README_d15042_02_epic_c8_dmc d15042_02_epic_c8_dmc.mrg.gz
