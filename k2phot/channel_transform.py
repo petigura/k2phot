@@ -66,7 +66,7 @@ def channel_transform(fitsfiles, h5file, iref= None):
             h5['pnts'] = pnts
             
     trans,pnts = read_channel_transform(h5file)
-    plot_trans(trans)
+    plot_trans(trans, pnts)
     figpath = h5file[:-3] + '.png'
     plt.gcf().savefig(figpath)
     print "saving %s " % figpath
