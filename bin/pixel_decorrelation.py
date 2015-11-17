@@ -36,7 +36,6 @@ if __name__ == "__main__":
 
     tlimits = [args.tmin,args.tmax]
     ap_select_tlimits = [args.atmin,args.atmax]
-
     pipeline.pipeline(
         args.pixfile, args.lcfile, args.transfile, debug=args.debug,
         tlimits=tlimits, tex=tex, ap_select_tlimits = ap_select_tlimits
