@@ -279,24 +279,27 @@ def lightcurve_segments(lc0):
         lc = lc_segments[i]
         lc = lightcurve.Lightcurve(lc)
         fm = lc.get_fm('fsap')
-        fdt = lc.get_fm('ftnd_t_roll_2D')
+        ftnd = lc.get_fm('ftnd_t_roll_2D')
         
         plt.sca(axiL[0])
-        plot(lc['t'],lc['roll'])
+        plot(lc['t'],lc['roll'],label='x: t, y: roll')
 
         plt.sca(axiL[1])
-        plot(lc['roll'],fm,'.')
-        plot(lc['roll'],fdt,'.')
+        plot(lc['roll'],fm,'.',label='x: roll, y: flux')
+        plot(lc['roll'],ftnd,'.',label='x: roll, y: flux model')
 
         plt.sca(axiL[2])
-        plot(lc['t'],lc['roll'])
+        plot(lc['t'],lc['roll'],label='x: t, y: roll')
 
         plt.sca(axiL[3])
         
         xpr = lc.get_fm('xpr')
         ypr = lc.get_fm('ypr')
-        plot(xpr,ypr,'.')
+        plot(xpr,ypr,'.',label='x: xpr, y: yrp')
 
+    for i in range(nrows):
+        plt.sca(ax0L[i])
+        plt.legend(fontsize='x-small')
     fig.subplots_adjust(
         left=0.05, right=0.99, top=0.99, bottom=0.05, hspace=0.001, wspace=0.001
     )
