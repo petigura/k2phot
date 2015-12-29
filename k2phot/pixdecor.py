@@ -143,18 +143,18 @@ class PixDecor(PixDecorBase):
     ]
 
     def __init__(self, pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], 
-                 tex=None):
+                 tex=None,starname=None):
         self.pixfn = pixfn
         self.lcfn = lcfn
         self.transfn = transfn
         self.kepmag = fits.open(pixfn)[0].header['KEPMAG']
         self.basename = os.path.splitext(lcfn)[0]
-        self.starname = os.path.basename(self.basename)
+        self.starname = int(starname)
         self.apertures = kepmag_to_apertures(self.kepmag)
 
         # Define skeleton light curve. This pandas DataFrame contains all
         # the columns that don't depend on which aperture is used.
-        im,x,y = read_imagestack(pixfn,tlimits=tlimits,tex=tex)
+        im,x,y = read_imagestack(pixfn,tlimits=tlimits,tex=tex,starname=starname)
         self.x = x
         self.y = y
         self.im = im 

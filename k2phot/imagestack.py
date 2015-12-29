@@ -8,6 +8,7 @@ import pandas as pd
 from frame import Frame
 import circular_photometry
 from io_utils.pixel import loadPixelFile, get_wcs
+from k2phot.io_utils import k2_catalogs
 from circular_photometry import circular_photometry_weights
 
 class ImageStack(object):
@@ -38,13 +39,19 @@ class ImageStack(object):
         self.ts = pd.DataFrame(ts)
         self.tlimits = tlimits
 
-    def get_xy_from_header(self):
+    def get_xy_from_header(self,starname=None):
         """
         Get x,y position of the target star from the header WCS
         """
         
         wcs = get_wcs(self.pixfile)
         ra,dec = self.headers[0]['RA_OBJ'],self.headers[0]['DEC_OBJ']
+        if type(starname)!=type(None):
+            cat = k2_catalogs.read_cat('all',return_targets=False)
+            star = cat.ix[int(starname)]
+            ra = star.ra
+            dec = star.dec
+
         x,y = wcs.wcs_world2pix(ra,dec,0)
         x = float(x)
         y = float(y)
@@ -237,9 +244,9 @@ def background_mask(cad,fbg,plot=False):
         plt.legend()
     return fbgfit,bgmask
 
-def read_imagestack(pixfile,tlimits=[-np.inf,np.inf],tex=None):
+def read_imagestack(pixfile,tlimits=[-np.inf,np.inf],tex=None,starname=None):
     im = ImageStack(pixfile,tlimits=tlimits,tex=tex)
-    x,y = im.get_xy_from_header()
+    x,y = im.get_xy_from_header(starname=starname)
     return im, x, y
 
 

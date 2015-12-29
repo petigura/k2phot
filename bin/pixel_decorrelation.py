@@ -26,6 +26,9 @@ if __name__ == "__main__":
     p.add_argument(
         '--tex', type=str, default=None,help='Exclude time range'
     )
+    p.add_argument(
+        '--starname', type=str, default=None,help='other star'
+    )
 
     args  = p.parse_args()
     tex = args.tex
@@ -38,6 +41,7 @@ if __name__ == "__main__":
     ap_select_tlimits = [args.atmin,args.atmax]
     pipeline.pipeline(
         args.pixfile, args.lcfile, args.transfile, debug=args.debug,
-        tlimits=tlimits, tex=tex, ap_select_tlimits = ap_select_tlimits
+        tlimits=tlimits, tex=tex, ap_select_tlimits = ap_select_tlimits,
+        starname=args.starname
         )
 

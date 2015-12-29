@@ -4,13 +4,14 @@ import numpy as np
 from config import bjd0
 
 def pipeline(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None, 
-             debug=False, ap_select_tlimits=None):
+             debug=False, ap_select_tlimits=None, starname=None):
     """
     Run the pixel decorrelation on pixel file
     """
 
     pixdcr = pixdecor.PixDecor(
-        pixfn, lcfn,transfn, tlimits=ap_select_tlimits, tex=None
+        pixfn, lcfn,transfn, tlimits=ap_select_tlimits, tex=None, 
+        starname=starname
         )
     pixdcr.set_lc0(3)
 
@@ -31,7 +32,7 @@ def pipeline(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
     dmin = dfaper.iloc[0]
     
     pixdcr = pixdecor.PixDecor(
-        pixfn, lcfn,transfn, tlimits=tlimits, tex=None
+        pixfn, lcfn,transfn, tlimits=tlimits, tex=None, starname=starname
         )
     pixdcr.set_lc0(dmin['r'])
     pixdcr.set_hyperparameters()
@@ -44,7 +45,7 @@ def pipeline(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
     pixdcr.lc = detrend_dict['lc']
 
     pixdcr.to_fits(lcfn)
-
+    
     if 0:
         from matplotlib import pylab as plt
         plt.ion()
