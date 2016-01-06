@@ -10,12 +10,13 @@ Tested with Python v2.7.3, 2.7.6, 2.7.8
 
 ### Public Python modules ###
 ```
-- matplotlib / pylab (tested with v1.1.0, 1.3.1)
-- NumPy (tested with v1.6.2, 1.8.1)
+- matplotlib / pylab (tested with 1.1.0, 1.3.1)
+- NumPy (tested with 1.6.2, 1.8.1)
 - SciPy (tested with 0.7.0, 0.10.1, 0.14.0)
-- AstroPy (for io.fits; tested with v0.4, 0.4.1)
-- Pandas (v0.14.1)
+- AstroPy (for io.fits; tested with 0.4, 0.4.1)
+- Pandas (0.14.1)
 - skimage (0.10.0)
+- george (0.2.1)
 ```
 
 ### Private Python modules ###
