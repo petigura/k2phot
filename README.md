@@ -20,19 +20,19 @@ Tested with Python v2.7.3, 2.7.6, 2.7.8
 
 ### Private Python modules ###
 
+```
+- k2utils
+- terra
+```
+
 ## Installation Instructions ##
 
 1. Make sure necessary dependencies are installed
-2. clone the git repo `git clone git@github.com:petigura/k2phot.git`
-3. Run the following script `code/bin/get_k2photfiles.sh` to download K2 catalogs (~100 MB) from Erik's NERSC website...
-4. To properly identify target stars based on WCS data, the
-  environment variable K2_DIR must be set. Target Catalogs must be in
-  ${K2_DIR}/catalogs/ .  Example catalogues are found at
-  http://archive.stsci.edu/missions/k2/catalogs/
-5. The environment variable K2PHOT_DIR must also be set.  Target
-  catalogues must be in $K2PHOT_DIR/target_lists/ -- e.g., the file
-  http://keplerscience.arc.nasa.gov/K2/docs/Campaigns/C0/K2Campaign0targets.csv
-6. In order for the code to run, the following environment variables need to be set
+1. `git clone git@github.com:petigura/k2phot.git`
+1. `git clone git@github.com:petigura/k2utils.git`
+1. `git clone git@github.com:petigura/terra.git`
+
+1. In order for the code to run, the following environment variables need to be set
 
   ```
   K2_DIR $projdir/K2/ # Working directory for K2 project
@@ -46,13 +46,24 @@ Tested with Python v2.7.3, 2.7.6, 2.7.8
   
   ```
   prepend-path PYTHONPATH $K2PHOT_DIR/k2phot/
-
   prepend-path PATH $K2PHOT_DIR/code/bin/
   prepend-path PATH $K2_TERRA_DIR/k2_webapp/
   prepend-path PATH $K2_TERRA_DIR/bin/
   ```
   
   At NERSC, I manage these environment variables with the modules package so I can simultaniously keep a development and a deployed version
+
+
+
+
+1. Run the following script `k2utils/code/bin/get_k2photfiles.sh` to download K2 catalogs (~100 MB) from Erik's NERSC website...
+1. To properly identify target stars based on WCS data, the
+  environment variable K2_DIR must be set. Target Catalogs must be in
+  ${K2_DIR}/catalogs/ .  Example catalogues are found at
+  http://archive.stsci.edu/missions/k2/catalogs/
+1. The environment variable K2PHOT_DIR must also be set.  Target
+  catalogues must be in $K2PHOT_DIR/target_lists/ -- e.g., the file
+  http://keplerscience.arc.nasa.gov/K2/docs/Campaigns/C0/K2Campaign0targets.csv
 
 
 
