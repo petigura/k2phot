@@ -16,7 +16,9 @@ Tested with Python v2.7.3, 2.7.6, 2.7.8
 - AstroPy (for io.fits; tested with 0.4, 0.4.1)
 - Pandas (0.14.1)
 - skimage (0.10.0)
-- george (0.2.1)
+- photutils
+- emcee
+- george (requires eigen) complicated install, consult evernote
 ```
 
 ### Private Python modules ###
