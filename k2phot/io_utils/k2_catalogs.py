@@ -80,7 +80,7 @@ C7 README_d14260_03_epic_c7_dmc d14260_03_epic_c7_dmc.mrg.gz
 C8 README_d15042_02_epic_c8_dmc d15042_02_epic_c8_dmc.mrg.gz
 C10 README_d15076_02_epic_c10_dmc d15076_02_epic_c10_dmc.mrg.gz
 """
-filenames = pd.read_table(sio(s),sep='\s',index_col=0)
+filenames = pd.read_table(sio(s),sep='\s',index_col=0, engine='python')
 
 
 class Reader(object):
