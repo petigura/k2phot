@@ -40,15 +40,20 @@ def circular_aperture(im, locx, locy, radius):
 
 def region_aperture(im, locx, locy, npix):
     order = connected_pixels_order(im, locx, locy)
-    #zoom = 10
     weights = ((npix > order) & (order >=0 )).astype(float)
-    weights_zoom = weights #nd.zoom(weights, zoom, order=0)
-    CS = plt.contour(weights_zoom,[0.5],colors=['Green'], hold=False)
-
     aper = Aperture()
-    aper.verts = CS.allsegs[0][0] #/ zoom
+    aper.verts = mask_to_verts(weights)
     aper.weights = weights
     return aper
+
+def mask_to_verts(mask,supersamp=10):
+    mask_ss = mask.repeat(supersamp,axis=0).repeat(supersamp,axis=1)
+    x_ss = ( np.arange(mask_ss.shape[1]) + 0.5 ) / supersamp - 0.5
+    y_ss = ( np.arange(mask_ss.shape[0]) + 0.5 ) / supersamp - 0.5
+    x_ss,y_ss = np.meshgrid(x_ss, y_ss)
+    cs = plt.contour(x_ss,y_ss,mask_ss,levels=[0.5],hold=False)
+    verts = cs.allsegs[0][0]
+    return verts
 
 def verts_to_weights(verts, shape, supersamp=10):
     ss_shape = ( shape[0]*supersamp, shape[1]*supersamp )

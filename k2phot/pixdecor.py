@@ -254,7 +254,7 @@ class PixDecor(PixDecorBase):
         p90.fill_value = 0
         p90 = p90.filled()
         aper = apertures.region_aperture(
-            p90, im.locx, im.locy, 300)
+            p90, im.locx, im.locy, 100)
 
         self.im.ap_weights = aper.weights
         self.aper = aper
