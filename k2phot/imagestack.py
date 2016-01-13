@@ -11,7 +11,7 @@ from io_utils.pixel import loadPixelFile, get_wcs
 from circular_photometry import circular_photometry_weights
 
 class ImageStack(object):
-    def __init__(self,pixfile,tlimits=[-np.inf,np.inf],tex=None):
+    def __init__(self, pixfile, tlimits=[-np.inf,np.inf],tex=None):
         """
         Initialize ImageStack Object
         

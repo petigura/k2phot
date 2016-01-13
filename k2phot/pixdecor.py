@@ -16,6 +16,7 @@ from astropy.io import fits
 import contextlib
 from matplotlib import pylab as plt
 from lightcurve import Lightcurve,Normalizer
+import apertures
 
 os.system('echo "pixel_decorrelation modules loaded:" $(date) ')
 
@@ -246,7 +247,17 @@ class PixDecor(PixDecorBase):
     def detrend_t_roll_2D(self,r ):
         # Create new lightcurve from skeleton
         lc = self.lc0.copy()
-        self.set_apertures(r)
+
+        im = self.im
+        p90 = np.nanpercentile(im.flux, 90, 0)
+        p90 = ma.masked_invalid(p90)
+        p90.fill_value = 0
+        p90 = p90.filled()
+        aper = apertures.region_aperture(
+            p90, im.locx, im.locy, 300)
+
+        self.im.ap_weights = aper.weights
+        self.aper = aper
         lc['fsap'] = self.im.get_sap_flux()
         norm = Normalizer(lc['fsap'].median()) 
         lc['f'] = norm.norm(lc['fsap'])        
@@ -301,7 +312,7 @@ def kepmag_to_apertures(kepmag):
     we want to search over?
     """
     if 0 <= kepmag < 10:
-        apertures = range(3,8)
+        apertures = range(3,15)
     elif 10 <= kepmag < 14:
         apertures = [1.0, 1.4, 2.0, 3, 4, 5, 6, 8 ]
     elif 14 <= kepmag < 25:

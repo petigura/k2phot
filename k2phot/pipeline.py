@@ -9,6 +9,11 @@ def pipeline(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
     Run the pixel decorrelation on pixel file
     """
 
+    
+    print "pixfn = {}".format(pixfn)
+    print "lcfn = {}".format(lcfn)
+    print "transfn = {}".format(transfn)
+    print "ap_select_tlimits = {}".format(ap_select_tlimits)
     pixdcr = pixdecor.PixDecor(
         pixfn, lcfn,transfn, tlimits=ap_select_tlimits, tex=None
         )
@@ -42,7 +47,6 @@ def pipeline(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
     pixdcr.dmin = dmin 
     detrend_dict = pixdcr.detrend_t_roll_2D(dmin['r'])
     pixdcr.lc = detrend_dict['lc']
-
     pixdcr.to_fits(lcfn)
 
     if 0:

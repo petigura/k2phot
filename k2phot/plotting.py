@@ -29,7 +29,8 @@ def medframe(pixdcr):
     fr -= np.median(lc['fbg'])
     fr.plot()
     fr.plot_label(pixdcr.pixfn,int(pixdcr.starname))
-    tit = pixdcr.name_mag() + " aperture radius=%.1f pixels" % (fr.r)
+    tit = pixdcr.name_mag()# + " aperture radius=%.1f pixels" % (fr.r)
+    pixdcr.aper.plot()
     plt.title(tit)
 
 def noise_vs_aperture_size(pixdcr,noisename='fdt_mad_6_cad_mtd'):
