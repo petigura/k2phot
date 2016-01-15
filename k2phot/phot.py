@@ -53,26 +53,26 @@ class Photometry(object):
     light curve, it also contains information about the aperture as
     well as a median frame image for easy plotting
 
-    :params medframe: Median image
+    :param medframe: Median image
     :type medframe: NxM array 
 
-    :params lc: Light curve. Every cadence has a measurement
+    :param lc: Light curve. Every cadence has a measurement
     :type lc: Pandas DataFrame
     
-    :params ap_weights: Mask used to compute static aperture
+    :param ap_weights: Mask used to compute static aperture
     :type ap_weights: NxM array 
 
-    :params ap_verts: Verticies of apertures (used for plotting)
+    :param ap_verts: Verticies of apertures (used for plotting)
     :type ap_verts: Pandas DataFrame
 
-    :params noise: Noise statistics for given aperture
+    :param noise: Noise statistics for given aperture
     :type noise: Pandas DataFrame
 
-    :params pixfn: Path to pixel file. Needed in order to copy over
+    :param pixfn: Path to pixel file. Needed in order to copy over
                    header information
     :type pixfn: str
 
-    :params extra_header: Extra keywords to be passed into primary header
+    :param extra_header: Extra keywords to be passed into primary header
     :type extra_header: 
     """
 
@@ -116,7 +116,7 @@ class Photometry(object):
 
         # HDU that holds noise properties
         hdu_ap_noise = _DataFrame_to_BinTableHDU(self.ap_noise, _COLDEFS_AP_NOISE)
-        hdu_ap_noise.header['EXTNAME'] = extname( group, 'ap_noise')
+        hdu_ap_noise.header['EXTNAME'] = extname( group, 'ap-noise')
 
         # HDU that holds light curve info common to all apertures
         lc_shared_keys = [ _name for _name, _, _, _ in _COLDEFS_LC_SHARED]
@@ -147,8 +147,6 @@ class Photometry(object):
 def extname(group, suffix):
     return "{}_{}".format(group,suffix)
 
-
-
 def hdu_to_DataFrame(hdu):
     """Convert BinTableHDU into DataFrame taking care of endian
     """
@@ -165,7 +163,7 @@ def read_fits(fitsfn, group):
     # Aperture-specific HDU
     hdu_ap_weights = hduL[extname( group, 'ap-weights')]
     hdu_ap_verts = hduL[extname( group, 'ap-verts')]
-    hdu_ap_noise = hduL[extname( group, 'ap_noise')]
+    hdu_ap_noise = hduL[extname( group, 'ap-noise')]
     hdu_ap_lc = hduL[extname( group, 'lc')]
 
     medframe = hdu_medframe.data
@@ -178,8 +176,6 @@ def read_fits(fitsfn, group):
 
     phot = Photometry(medframe, lc, ap_weights, ap_verts, ap_noise,)
     return phot
-
-
 
 # Covenience functions to facilitate fits writing
 def _DataFrame_to_Column(df,coldef):
