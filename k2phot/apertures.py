@@ -8,30 +8,52 @@ class Aperture(object):
     """
     Class for denfining apertures
     
-    :param ap_type: what type of aperture  `circular` or `region`
-    :type ap_type: str
+    :param im: 2D image array. Used to generate aperture weights
+    :type locx: N x M array 
 
-    :param ap_params: additional parameters for construction of aperture
-    :type ap_params: dict
-    """
-    def __init__(self):
-        self.verts = None
-        self.weights = None
-
-    def plot(self):
-        plt.plot(self.verts[:,0],self.verts[:,1],color='LimeGreen')
-
-def circular_aperture(im, locx, locy, radius):
-    """
     :param locx: x (column) coordinate of center
     :type locx: float
 
     :param locy: y (row) coordinate of center
     :type locy: float
 
-    :param radius: radius of circle (pixels)
-    :type radius: float
+    :param ap_type: type of aperture used
+    :param type: str eithr `circular` or `region`
+
+    :param npix: number of pixels used in aperture
+    :param type: float
     """
+    def __init__(self, *args, **kwargs):
+        self.verts = None
+        self.weights = None
+
+        if len(args)==0:
+            return None
+        
+        assert len(args)==5, "args = im, locx, locy, ap_type, npix"
+
+        im, locx, locy, ap_type, npix = args
+    
+        if ap_type=='circular':
+            radius = np.sqrt( npix / np.pi )
+            _ap = circular_aperture(im, locx, locy, radius)
+        elif ap_type=='region':
+            radius = np.sqrt( npix / np.pi )
+            _ap = region_aperture(im, locx, locy, npix)
+
+        self.verts = _ap.verts
+        self.weights = _ap.weights
+        self.npix = npix
+        self.ap_type = ap_type
+        self.name = "{}-{:.1f}".format(ap_type, npix)
+
+    def __repr__(self):
+        return "<Aperture type={} npix={}>".format(self.ap_type, self.npix)
+
+    def plot(self):
+        plt.plot(self.verts[:,0],self.verts[:,1],color='LimeGreen')
+
+def circular_aperture(im, locx, locy, radius):
     verts = _circular_aperture_verts(locx, locy, radius)
     aper = Aperture()
     aper.verts = verts
