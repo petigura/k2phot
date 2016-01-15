@@ -6,7 +6,6 @@ import pandas as pd
 import george
 
 from pdplus import LittleEndian
-from config import bjd0, noisekey, noisename, rbg
 
 from ses import total_precision_theory
 from matplotlib import pylab as plt

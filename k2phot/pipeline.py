@@ -21,6 +21,8 @@ from lightcurve import Lightcurve,Normalizer
 from numpy import ma
 from config import bjd0
 from channel_transform import read_channel_transform
+from config import bjd0, noisekey, noisename, rbg
+import phot
 
 class Pipeline(object):
     """Pipeline class
@@ -64,6 +66,9 @@ class Pipeline(object):
         self.x = x
         self.y = y
         self.im = im 
+        medframe = im.get_medframe()
+        medframe.fill_value = 0
+        self.medframe = medframe.filled()
 
         # As the reference image to construct apertures, use the 90th
         # percentile flux value. When the bleed columns move around,
@@ -86,7 +91,6 @@ class Pipeline(object):
             ap = self.get_aperture(ap_type, npix)
             _apertures.append(ap)
         return _apertures
-
 
     def set_lc0(self, ap_type, npix):
         """
@@ -145,25 +149,12 @@ class Pipeline(object):
         Perform an initial run with a single aperture size
         grab the outliers from this run and use it in subsequent runs
         """
-        # Part 1 
-        # Standardize the data
-
         # Set the values of the GP hyper parameters
         lc = pixdecor.detrend_t_roll_2D_segments( 
             self.lc0, self.sigma, self.length_t, self.length_roll,self.sigma_n,
             reject_outliers=True, segment_length=20
             )
         self.fdtmask = lc['fdtmask'].copy() 
-
-
-    def scan_apertures(self, apertures):
-        """
-        """
-        phots = []
-        for ap in apertures:
-            phot = self.detrend_t_roll_2D(ap)
-            phots.append(phot)
-        return phots
 
     def detrend_t_roll_2D(self, ap):
         # Create new lightcurve from skeleton
@@ -180,14 +171,26 @@ class Pipeline(object):
 
         # Cast as Lightcurve object
         lc = Lightcurve(lc)
-        sesfdt = lc.get_ses(noisekey) 
-        sesf = lc.get_ses('f')
+        
+        noise = []
+        for key in [noisekey,'f']:
+            ses = lc.get_ses(key) 
+            ses = pd.DataFrame(ses)
+            ses['name'] = ses.index
+            ses['name'] = key +'_' + ses['name'] 
+            ses = ses[['name','value']]
+            noise.append(ses)
+
+        noise = pd.concat(noise,ignore_index=True)
+
         for k in self.unnormkeys:
             lc[k] = norm.unnorm(lc[k])
 
-        _phot = phot.Photometry(medframe, lc, ap.weights, ap.verts, ap.noise, pixfn=pixfn)
+        _phot = phot.Photometry(
+            self.medframe, lc, ap.weights, ap.verts, noise, pixfn=self.pixfn
+            )
 
-        return detrend_dict
+        return _phot
 
     def get_diagnostic_info(self, d):
         sdisp = "starname=%s " % self.starname
@@ -226,17 +229,67 @@ class Pipeline(object):
         plt.close('all')
         print "created %s " % figpath
 
-def pipeline(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None, 
+def run(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None, 
              debug=False, ap_select_tlimits=None):
     """
     Run the pixel decorrelation on pixel file
     """
 
-    
+    # Small, med, and large apertures 
+    DEFAULT_AP_RADII = [1.5, 3, 8] 
     print "pixfn = {}".format(pixfn)
     print "lcfn = {}".format(lcfn)
     print "transfn = {}".format(transfn)
     print "ap_select_tlimits = {}".format(ap_select_tlimits)
+
+    pipe = Pipeline(
+           pixfn, lcfn,transfn, tlimits=ap_select_tlimits, tex=None
+           )
+
+    pipe.set_lc0('circular',10)
+    pipe.set_hyperparameters()
+    pipe.reject_outliers()
+    apers = pipe.get_default_apertures()
+    #apers = []
+
+    df = pd.DataFrame(dict(aper=apers))
+    df['default'] = False # 
+    df['fits_group'] = '' 
+    for r in DEFAULT_AP_RADII:
+        npix = np.pi * r **2 
+        aper = pipe.get_aperture('circular', npix)
+        row = dict(aper=aper, default=True, fits_group=aper.name)
+        row  = pd.Series( row ) 
+        df = df.append(row, ignore_index=True)
+
+    df['phot'] = None
+    df['noise'] = None
+    df['npix'] = 0
+    for i,row in df.iterrows():
+        phot = pipe.detrend_t_roll_2D(row.aper)
+        df.ix[i,'phot'] = phot
+        df.ix[i,'phot'] = pipe.detrend_t_roll_2D(row.aper)
+        ap_noise = phot.ap_noise
+        ap_noise.index = ap_noise.name
+        df.ix[i,'noise'] = ap_noise.ix[noisekey+'_'+noisename].value
+        df.ix[i,'npix'] = row.aper.npix
+        df.ix[i,'fits_group'] = row.aper.name
+        
+    df['to_fits'] = False
+    row = df.loc[df.noise.idxmin()].copy()
+    row['to_fits'] = True
+    row['fits_group'] = 'optimum'
+
+    df = df.append(row, ignore_index=True)
+    df.loc[df.default,'to_fits'] = True
+    print df.sort('npix')['fits_group npix noise to_fits'.split()]
+
+    print "saving to {}".format(lcfn) 
+    for i,row in df[df.to_fits].iterrows():
+        row.phot.to_fits(lcfn,row.fits_group)
+
+
+def old_pipeline():
     pixdcr = pixdecor.PixDecor(
         pixfn, lcfn,transfn, tlimits=ap_select_tlimits, tex=None
         )

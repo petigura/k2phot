@@ -29,7 +29,7 @@ _COLDEFS_AP_LC = [
 
 # Column definitions that are specific to a given aperture
 _COLDEFS_AP_NOISE = [
-    ["name","D","Noise statistic",""],
+    ["name","20A","Noise statistic",""],
     ["value","D","Value","ppm"],
 ]
 
