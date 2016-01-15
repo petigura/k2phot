@@ -3,7 +3,7 @@ import numpy as np
 import matplotlib
 from scipy.misc import imresize
 from matplotlib import pylab as plt
-
+import pandas as pd
 class Aperture(object):
     """
     Class for denfining apertures
@@ -40,15 +40,24 @@ class Aperture(object):
         elif ap_type=='region':
             radius = np.sqrt( npix / np.pi )
             _ap = region_aperture(im, locx, locy, npix)
+        else:
+            assert False, "ap_type must be circular or aperture"
 
-        self.verts = _ap.verts
+        verts = _ap.verts
+        verts = pd.DataFrame(verts, columns=['x','y']) 
+        verts['ra'] = -1.0
+        verts['dec'] = -1.0
+
+        self.verts = verts
         self.weights = _ap.weights
         self.npix = npix
         self.ap_type = ap_type
         self.name = "{}-{:.1f}".format(ap_type, npix)
 
     def __repr__(self):
-        return "<Aperture type={} npix={}>".format(self.ap_type, self.npix)
+        outstring = "<Aperture type={} npix={:.1f}>".format(
+            self.ap_type, self.npix )
+        return outstring
 
     def plot(self):
         plt.plot(self.verts[:,0],self.verts[:,1],color='LimeGreen')
