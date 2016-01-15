@@ -1,4 +1,3 @@
-import os
 from cStringIO import StringIO as sio
 
 import numpy as np
@@ -7,316 +6,40 @@ import pandas as pd
 import george
 
 from pdplus import LittleEndian
-from imagestack import ImageStack, read_imagestack
-from channel_transform import read_channel_transform
 from config import bjd0, noisekey, noisename, rbg
 
 from ses import total_precision_theory
-from astropy.io import fits
-import contextlib
 from matplotlib import pylab as plt
-from lightcurve import Lightcurve,Normalizer
 import apertures
 
 os.system('echo "pixel_decorrelation modules loaded:" $(date) ')
 
-class PixDecorBase(object):
+def kepmag_to_npix(kepmag):
     """
-    Contains the io methods for PixDecor object
-    """
-
-    # Light curve table
-    lightcurve_columns = [
-        # LIGHTCURVE_SHARED
-        ["thrustermask","L","Thruster fire","bool"],
-        ["roll","D","Roll angle","arcsec"],
-        ["xpr","D","Column position of representative star","pixel"],
-        ["ypr","D","Row position of representative star","pixel"],
-        ["cad","J","Unique cadence number","int"],
-        ["t","D","Time","BJD - %i" % bjd0],
-
-        # LIGHTCURVE_A
-        ["fbg","D","Background flux","electrons per second per pixel"],
-        ["bgmask","L","Outlier in background flux","bool"],
-        ["fsap","D","Simple aperture photometry","electrons per second"],
-        ["fmask","L","Global mask. Observation ignored","bool"],
-        ["fdtmask","L",
-         "Detrending mask. Observation ignored in detrending model","bool"],
-        ["fdt_t_roll_2D","D","Residuals (fsap - ftnd_t_roll_2D)",
-         "electrons per second"],
-        ["fdt_t_rollmed","D","ftnd_t_rollmed + fdt_t_roll_2D",
-         "electrons per second"],
-    ]
-       
-    # Noise table columns
-    dfaper_columns = [
-        ["r","D","Radius of aperture","pixels"],
-        ["f_"+noisename,"D","Noise in raw photometry","ppm"],
-        ["fdt_"+noisename,"D","Noise in detrended photometry","ppm"],
-    ]
-
-    extra_header_keys = [
-        ('pixfn','target pixel file'),
-        ('transfn','transformation file'),
-    ]
-
-    def name_mag(self):
-        """Return formatted name and magnitdue"""
-        return "EPIC-%s, KepMag=%.1f" % (self.starname,self.kepmag)
-
-    def raw_corrected(self):
-        dmin = dict(self.dfaper.iloc[0])
-        dmin['noisename'] = noisename
-        dmin['raw'] = dmin['f_'+noisename]
-        dmin['cor'] = dmin['fdt_'+noisename]
-        dmin['fac'] = dmin['raw'] / dmin['cor'] *100
-
-        outstr = "Noise Level (%(noisename)s) : Raw=%(raw).1f (ppm), Corrected=%(cor).1f (ppm); Improvement = %(fac).1f %%" % dmin
-        
-        return outstr
-
-    def to_fits(self,fitsfn):
-        """
-        Package up the light curve, SES information into a fits file
-        """
-        
-        # Covenience functions to facilitate fits writing
-        def fits_column(c,df):
-            array = np.array(df[ c[0] ])
-            column = fits.Column(array=array, format=c[1], name=c[0], unit=c[3])
-            return column
-
-        def BinTableHDU(df,coldefs):
-            columns = [fits_column(col,df) for col in coldefs]
-            hdu = fits.BinTableHDU.from_columns(columns)
-            for c in coldefs:
-                hdu.header[c[0]] = c[2]
-            return hdu
-
-        # Copy over primary HDU
-        hduL_pixel = fits.open(self.pixfn)
-        hdu0 = hduL_pixel[0]
-        for key,description in self.extra_header_keys:
-            hdu0.header[key] = ( getattr(self,key), description )
-
-        hdu1 = BinTableHDU(self.lc,self.lightcurve_columns)
-        hdu2 = BinTableHDU(self.dfaper,self.dfaper_columns)        
-        hduL = fits.HDUList([hdu0,hdu1,hdu2])
-        hduL.writeto(fitsfn,clobber=True)
-
-def read_fits(lcfn):
-    pixdcr = PixDecorBase()
-    hduL = fits.open(lcfn)
-    pixdcr.lcfn = lcfn
-
-    for k in 'pixfn transfn kepmag'.split():
-        setattr(pixdcr,k,hduL[0].header[k])
-
-    pixdcr.basename = os.path.splitext(pixdcr.lcfn)[0]
-    pixdcr.starname = os.path.basename(pixdcr.basename)
-
-    pixdcr.dfaper = pd.DataFrame(hduL[2].data)
-    lc = hduL[1].data
-    lc = LittleEndian( lc )
-    lc = pd.DataFrame( lc ) 
-
-    for fdtkey in 'fdt_t_roll_2D fdt_t_rollmed'.split():
-        ftndkey = fdtkey.replace('fdt','ftnd')
-        lc[ftndkey] = lc['fsap'] - lc[fdtkey] + np.median(lc['fsap'])
-
-    pixdcr.lc = lc
-    return pixdcr
-
-class PixDecor(PixDecorBase):
-    """
-    Pixel Decorrelation Object
-
-    Facilitates the creation of K2 photometry and diagnostic plots
-    """
-
-    unnormkeys = [
-        "f",
-        "fdt_t_roll_2D",
-        "ftnd_t_roll_2D",
-        "fdt_t_rollmed",
-        "ftnd_t_rollmed",
-    ]
-
-    def __init__(self, pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], 
-                 tex=None):
-        self.pixfn = pixfn
-        self.lcfn = lcfn
-        self.transfn = transfn
-        self.kepmag = fits.open(pixfn)[0].header['KEPMAG']
-        self.basename = os.path.splitext(lcfn)[0]
-        self.starname = os.path.basename(self.basename)
-        self.apertures = kepmag_to_apertures(self.kepmag)
-
-        # Define skeleton light curve. This pandas DataFrame contains all
-        # the columns that don't depend on which aperture is used.
-        im,x,y = read_imagestack(pixfn,tlimits=tlimits,tex=tex)
-        self.x = x
-        self.y = y
-        self.im = im 
-
-    def set_lc0(self,r0):
-        """
-        Set Skeleton Lightcurve
-
-        Parameters
-        ----------
-        r0 : radius of aperture used to create skeleton light curve
-        """
-        # Define skeleton light-curve
-        # Include pixel transformation information 
-        self.im.set_apertures(self.x,self.y,rbg)
-        self.im.set_fbackground(rbg)
-        self.r0 = r0
-
-        lc = self.im.ts 
-        trans,pnts = read_channel_transform(self.transfn)
-        trans['roll'] = trans['theta'] * 2e5
-        # Hack select a representative star to use for x-y position 
-        sqdist = (
-            (np.median(pnts['x'],axis=1) - 500)**2 +
-            (np.median(pnts['y'],axis=1) - 500)**2 
-            )
-        pnts500 = pnts[np.argmin(sqdist)]
-        pnts = pd.DataFrame(pnts[0]['cad'.split()])
-        pnts['xpr'] = pnts500['xpr']
-        pnts['ypr'] = pnts500['ypr']
-
-        trans = pd.concat([trans,pnts],axis=1)
-        lc['fsap'] = self.im.get_sap_flux()
-        norm = Normalizer(lc['fsap'].median())
-        lc['f'] = norm.norm(lc['fsap'])
-        lc = pd.merge(trans,lc,on='cad')
-        lc['fmask'] = lc['f'].isnull() | lc['thrustermask'] | lc['bgmask']
-        lc['fdtmask'] = lc['fmask'].copy()
-        self.lc0 = lc
-
-    def set_hyperparameters(self):
-        """
-        Sets the hyperparameters using information from the skeleton
-        lightcurve
-        """
-
-        tchunk = 10 # split lightcurve in to tchunk-day long segments
-
-        self.sigma_n = white_noise_estimate(self.kepmag)
-        nchunks = self.lc0['t'].ptp() / tchunk
-        nchunks = int(nchunks)
-        sigma = map(lambda x : np.std(x['f']), np.array_split(self.lc0,nchunks))
-        self.sigma = np.median(sigma)
-        self.length_t = 4
-        self.length_roll = 10
-
-    def reject_outliers(self):
-        """
-        Perform an initial run with a single aperture size
-        grab the outliers from this run and use it in subsequent runs
-        """
-        # Part 1 
-        # Standardize the data
-
-        # Set the values of the GP hyper parameters
-        lc = detrend_t_roll_2D_segments( 
-            self.lc0, self.sigma, self.length_t, self.length_roll,self.sigma_n,
-            reject_outliers=True, segment_length=20
-            )
-        self.fdtmask = lc['fdtmask'].copy() 
-
-    def set_apertures(self,r):
-        self.im.set_apertures(self.x,self.y,r)
-        print "aperture size = %i" % r
-
-    def scan_aperture_size(self):
-        dfaper = []
-        for r in self.apertures:
-            detrend_dict = self.detrend_t_roll_2D(r)
-            dfaper.append(detrend_dict)
-        dfaper = pd.DataFrame(dfaper)
-        dfaper = dfaper.sort('fdt_'+noisename)
-        self.dmin = dfaper.iloc[0]
-        self.lc = self.dmin['lc']
-
-        # Drop off the lightcurve column
-        self.dfaper = dfaper.drop(['lc'],axis=1)
-        
-    def detrend_t_roll_2D(self,r ):
-        # Create new lightcurve from skeleton
-        lc = self.lc0.copy()
-
-        im = self.im
-        p90 = np.nanpercentile(im.flux, 90, 0)
-        p90 = ma.masked_invalid(p90)
-        p90.fill_value = 0
-        p90 = p90.filled()
-        aper = apertures.region_aperture(
-            p90, im.locx, im.locy, 100)
-
-        self.im.ap_weights = aper.weights
-        self.aper = aper
-        lc['fsap'] = self.im.get_sap_flux()
-        norm = Normalizer(lc['fsap'].median()) 
-        lc['f'] = norm.norm(lc['fsap'])        
-        lc['fdtmask'] = self.fdtmask 
-        lc = detrend_t_roll_2D( 
-            lc, self.sigma, self.length_t, self.length_roll,self.sigma_n, 
-            reject_outliers=False
-            )
-
-        # Cast as Lightcurve object
-        lc = Lightcurve(lc)
-        sesfdt = lc.get_ses(noisekey) 
-        sesf = lc.get_ses('f')
-        for k in self.unnormkeys:
-            lc[k] = norm.unnorm(lc[k])
-
-        detrend_dict = {
-            'r': r, 
-            'lc': lc.copy(), 
-            'f_' + noisename : sesf.ix[noisename],
-            'fdt_' + noisename : sesfdt.ix[noisename],
-            } 
-
-        print self.get_diagnostic_info(detrend_dict)
-        return detrend_dict
-
-    def get_diagnostic_info(self, d):
-        sdisp = "starname=%s " % self.starname
-        sdisp += "r=%(r).1f " % d
-
-        for k in "f fdt".split():
-            k = k+'_'+noisename
-            sdisp += "%s=%.1f " % (k,d[k] )
-        return sdisp
-        
-    @contextlib.contextmanager
-    def FigureManager(self,suffix):
-        """
-        A small context manager that pops figures and resolves the output
-        filepath
-        """
-        plt.figure() # Executes before code block
-        yield # Now run the code block
-        figpath = self.basename+suffix
-        plt.savefig(figpath,dpi=160)
-        plt.close('all')
-        print "created %s " % figpath
-
-def kepmag_to_apertures(kepmag):
-    """
-    Given the kepmag of given target star, what range of apertures do
-    we want to search over?
+    Given the kepmag of given target star, provide a range of
+    apertures to search over we want to search over.
     """
     if 0 <= kepmag < 10:
-        apertures = range(3,15)
+        npix = [32, 45, 64, 90, 128, 181, 256, 362, 512]
     elif 10 <= kepmag < 14:
-        apertures = [1.0, 1.4, 2.0, 3, 4, 5, 6, 8 ]
+        npix = [4.0, 5.7, 8.0, 11, 16, 22, 32, 45, 64, 90, 128, 181]
     elif 14 <= kepmag < 25:
-        apertures = [1.0, 1.4, 2.0, 3, 4]
-    return apertures
+        npix = [4.0, 5.7, 8.0, 11, 16, 22, 32, 45,]
+
+    return npix
+
+def npix_to_ap_type(npix):
+    """
+    Caculates the when we transition form circular apertures to region
+    apertures.
+    """
+    radius_switch = 4.0 # switch from circular to region aperture.
+    npix_switch = np.pi * radius_switch**2
+
+    if npix > npix_switch:
+        return 'region'
+    else:
+        return 'circular'
 
 def white_noise_estimate(kepmag):
     """
@@ -324,7 +47,6 @@ def white_noise_estimate(kepmag):
     
     The Gaussian Process noise model assumes that some of the variance
     is white. 
-
     """
     fac = 2 # Factor by which to inflate Poisson and read noise estimate
     noise_floor = 100e-6 # Do not allow noise estimate to fall below this amount
