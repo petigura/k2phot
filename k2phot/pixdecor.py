@@ -27,24 +27,23 @@ class PixDecorBase(object):
 
     # Light curve table
     lightcurve_columns = [
+        # LIGHTCURVE_SHARED
         ["thrustermask","L","Thruster fire","bool"],
         ["roll","D","Roll angle","arcsec"],
         ["xpr","D","Column position of representative star","pixel"],
         ["ypr","D","Row position of representative star","pixel"],
         ["cad","J","Unique cadence number","int"],
         ["t","D","Time","BJD - %i" % bjd0],
+
+        # LIGHTCURVE_A
         ["fbg","D","Background flux","electrons per second per pixel"],
         ["bgmask","L","Outlier in background flux","bool"],
-
         ["fsap","D","Simple aperture photometry","electrons per second"],
         ["fmask","L","Global mask. Observation ignored","bool"],
-
         ["fdtmask","L",
          "Detrending mask. Observation ignored in detrending model","bool"],
-
         ["fdt_t_roll_2D","D","Residuals (fsap - ftnd_t_roll_2D)",
          "electrons per second"],
-
         ["fdt_t_rollmed","D","ftnd_t_rollmed + fdt_t_roll_2D",
          "electrons per second"],
     ]
