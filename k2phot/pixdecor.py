@@ -176,17 +176,6 @@ class PixDecor(PixDecorBase):
         lc = self.im.ts 
         trans,pnts = read_channel_transform(self.transfn)
         trans['roll'] = trans['theta'] * 2e5
-        # Hack select a representative star to use for x-y position 
-        sqdist = (
-            (np.median(pnts['x'],axis=1) - 500)**2 +
-            (np.median(pnts['y'],axis=1) - 500)**2 
-            )
-        pnts500 = pnts[np.argmin(sqdist)]
-        pnts = pd.DataFrame(pnts[0]['cad'.split()])
-        pnts['xpr'] = pnts500['xpr']
-        pnts['ypr'] = pnts500['ypr']
-
-        trans = pd.concat([trans,pnts],axis=1)
         lc['fsap'] = self.im.get_sap_flux()
         norm = Normalizer(lc['fsap'].median())
         lc['f'] = norm.norm(lc['fsap'])
@@ -195,18 +184,26 @@ class PixDecor(PixDecorBase):
 
         # Set PCA mask
         # Use the points that have already been masked out to condition the pca
-        X =lc[~lc.fmask]['xpr ypr'.split()]
-        pca = PCA(n_components=2)
-        pca.fit(X)
-        Xprime = pca.transform(X)
-        sig = 1.6 * np.median(np.abs(Xprime),axis=0) # robust sigma
-        fac = 3.0 # exclude if farther than 3 sig away
+        length_seg = 500
+        nseg = len(lc) / length_seg
+        idx_segments = np.array_split(lc.index,nseg)
+        lc['newmask'] = False
+        for idx in idx_segments:
+            X = lc[~lc.fmask].ix[idx]['xpr ypr'.split()]
+            X = X.dropna()
+            pca = PCA(n_components=2)
+            pca.fit(X)
+            Xprime = pca.transform(X)
+            sig = 1.6 * np.median(np.abs(Xprime),axis=0) # robust sigma
+            fac = 2.0 # exclude if farther than 3 sig away
 
-        X =lc['xpr ypr'.split()]
-        Xprime = pca.transform(X)
-        newmask = (((np.abs(Xprime) / sig[np.newaxis] ) > fac).sum(1) > 0)
-        lc['fmask'] = lc['fmask'] | newmask
-
+            X =lc.ix[idx]['xpr ypr'.split()]
+            Xprime = pca.transform(X)
+            newmask = (((np.abs(Xprime) / sig[np.newaxis] ) > fac).sum(1) > 0)
+            lc.ix[idx,'newmask'] = newmask
+            print "removing {} pts xpr ypr outliers".format(newmask.sum())
+        
+        lc['fmask'] = lc['fmask'] | lc['newmask']
         lc['fdtmask'] = lc['fmask'].copy()
         self.lc0 = lc
 

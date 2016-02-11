@@ -94,7 +94,7 @@ class ImageStack(object):
         bgmask = bgmask | is_all_nan
 
         self.bgmask = bgmask
-        self.ts['fbg'] = 0*self.fbg
+        self.ts['fbg'] = self.fbg
         self.ts['bgmask'] = self.bgmask
 
     def get_sap_flux(self):

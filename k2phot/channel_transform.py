@@ -193,7 +193,6 @@ def get_thrustermask(dtheta):
     Returns
     -------
     thrustermask : boolean array where True means thruster fire
-
     """
     medfiltwid = 10 # Filter width to identify discontinuities in theta
     sigfiltwid = 100 # Filter width to establish local scatter in dtheta
@@ -203,7 +202,49 @@ def get_thrustermask(dtheta):
     diffdtheta = np.abs(dtheta - medtheta)
     sigma = nd.median_filter(diffdtheta,sigfiltwid) * 1.5
     thrustermask = np.array(diffdtheta > thresh*sigma)
+    idx = np.where(thrustermask)[0]
+    mask_after = idx + 1 # mask cadence after
+    mask_after = mask_after[mask_after < len(thrustermask)]
+    print "{} masked after thruster fire ".format(len(mask_after))
+    thrustermask[mask_after] = True
     return thrustermask
+
+def get_thrustermask_pos(trans):
+    """
+    Identify thruster fire events.
+
+    Delta theta is the change in telescope roll angle compared to the
+    previous cadence. We establish the typical scatter in delta theta
+    by computing the median absolute deviation of points in regions of
+    100 measurements. We identfy thruster fires as cadences where the
+    change in telescope roll angle exceeds the median absolute
+    deviation by > 15.
+
+    Parameters 
+    ----------
+    dtheta : roll angle for contiguous observations
+
+    Returns
+    -------
+    thrustermask : boolean array where True means thruster fire
+    """
+    medfiltwid = 100 # Filter width to identify discontinuities in theta
+    sigfiltwid = 100 # Filter width to establish local scatter in dtheta
+    thresh = 10 # Threshold to call something a thruster fire (units of sigma)
+
+    xpr = np.array(trans.xpr)    
+    ypr = np.array(trans.ypr)
+    dpix = np.sqrt((xpr[1:] - xpr[:-1])**2 + (ypr[1:] - ypr[:-1])**2)
+    dpix = np.hstack([[0],dpix])
+    dpixfilt = dpix - nd.median_filter(dpix,medfiltwid)
+    thrustermask = dpixfilt > np.percentile(dpixfilt,85)
+    return thrustermask
+
+#    idx = np.where(thrustermask)[0]
+#    mask_after = idx + 1 # mask cadence after
+#    mask_after = mask_after[mask_after < len(thrustermask)]
+#    print "{} masked after thruster fire ".format(len(mask_after))
+#    thrustermask[mask_after] = True
 
 
 
@@ -258,8 +299,20 @@ def read_channel_transform(h5file):
 
     trans = LE(trans)
     pnts = LE(pnts)
+    # Hack select a representative star to use for x-y position 
+    sqdist = (
+        (np.median(pnts['x'],axis=1) - 500)**2 +
+        (np.median(pnts['y'],axis=1) - 500)**2 
+        )
+    pnts500 = pnts[np.argmin(sqdist)]
+    pnts = pd.DataFrame(pnts[0]['cad'.split()])
+    pnts['xpr'] = pnts500['xpr']
+    pnts['ypr'] = pnts500['ypr']
+    trans = pd.DataFrame(trans)
+
+    trans = pd.concat([trans,pnts],axis=1)
     trans = trans_add_columns(trans)
-    trans['thrustermask'] = get_thrustermask(trans['dtheta'])
+    trans['thrustermask'] = get_thrustermask_pos(trans)
     return trans,pnts
 
 def plot_trans(trans,pnts):
