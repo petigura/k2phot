@@ -66,8 +66,9 @@ def loadPixelFile(fn, tlimits=None, bjd0=2454833, tex=None):
 
     f = fits.open(fn)
     cube = f[1].data
+    cube = np.array(cube) 
     ncad = len(cube)
-    qdf = parse_bits(cube['quality'])
+    qdf = parse_bits(cube['QUALITY'])
     sqdf = qdf.sum() # Compute the sum total of quality bits
     sqdf = pd.concat([sqdf,bitdesc],axis=1)
     sqdf.index.name = "bit"
@@ -79,16 +80,16 @@ def loadPixelFile(fn, tlimits=None, bjd0=2454833, tex=None):
     print "Removing %i cadences due to quality flag" % (ncad - np.sum(bqual)) 
     
     # Because masks are not always rectangles, we have to deal with nans.
-    flux0 = ma.masked_invalid(cube['flux'])
+    flux0 = ma.masked_invalid(cube['FLUX'])
     flux0 = flux0.sum(2).sum(1)
     bfinite = np.array(np.isfinite(flux0))
     print "Removing %i cadences due nans" % (ncad - np.sum(bfinite)) 
     
-    btime = (cube['time'] > mintime) & (cube['time'] < maxtime)
+    btime = (cube['TIME'] > mintime) & (cube['TIME'] < maxtime)
     if type(tex)!=type(None):
         for rng in tex:
             # Include regions that are outside of time range
-            brng = (cube['time'] < rng[0]) | (cube['time'] > rng[1])
+            brng = (cube['TIME'] < rng[0]) | (cube['TIME'] > rng[1])
             btime = btime & brng
 
     print "Removing %i cadences due to time limits" % (ncad - np.sum(btime)) 
@@ -98,8 +99,8 @@ def loadPixelFile(fn, tlimits=None, bjd0=2454833, tex=None):
 
     assert type(b)==type(np.ones(0)),"Boolean mask must be array"
     cube = cube[b]
-    print "tmin = %i, tmax = %i" % tuple(cube['time'][[0,-1]])
-    cube['time'][:] = cube['time'] + bjd0
+    print "tmin = %i, tmax = %i" % tuple(cube['TIME'][[0,-1]])
+    cube['TIME'][:] = cube['TIME'] + bjd0
     ret = (cube,) + ([headerToDict(el.header) for el in f],)
 
     f.close()
@@ -163,7 +164,7 @@ def parse_bits(quality):
     nbitssave = 16
     df = pd.DataFrame(sbqual,columns=list(np.arange(nbits,0,-1)))
     df = df[range(1,nbitssave+1)]
-    df = df.convert_objects(convert_numeric=True)
+    df = df.astype(int)
     return df 
 
 def loadPRF(**kw):
