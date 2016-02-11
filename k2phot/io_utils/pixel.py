@@ -44,8 +44,12 @@ def loadPixelFile(fn, tlimits=None, bjd0=2454833, tex=None):
         Value that will be added to the time index. The default
         "Kepler Epoch" is 2454833.
 
+      tex : Times to exclude
+
     :OUTPUTS:
       time, datastack, data_uncertainties, mask [, FITSheaders]
+
+      
     """
     # 2014-08-27 16:23 IJMC: Created
     # 2014-09-08 09:59 IJMC: Updated for K2 C0 data: masks.

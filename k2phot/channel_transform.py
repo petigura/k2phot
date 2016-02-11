@@ -205,6 +205,8 @@ def get_thrustermask(dtheta):
     thrustermask = np.array(diffdtheta > thresh*sigma)
     return thrustermask
 
+
+
 def trans_add_columns(trans):
     """
     Add columns to transformation table.

@@ -88,8 +88,13 @@ class ImageStack(object):
         flux = flux.reshape(-1,self.npix)
         self.fbg = np.array(ma.median(flux,axis=1))
         fbgfit,bgmask = background_mask(self.cad,self.fbg)
+
+        #Checks if every single cadence is a nan. If yes don't include at all
+        is_all_nan = flux.mask.sum(1)==flux.mask.shape[1]
+        bgmask = bgmask | is_all_nan
+
         self.bgmask = bgmask
-        self.ts['fbg'] = self.fbg
+        self.ts['fbg'] = 0*self.fbg
         self.ts['bgmask'] = self.bgmask
 
     def get_sap_flux(self):

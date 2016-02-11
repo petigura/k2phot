@@ -29,9 +29,9 @@ def pipeline(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
     pixdcr.scan_aperture_size()
     dfaper = pixdcr.dfaper
     dmin = dfaper.iloc[0]
-    
+
     pixdcr = pixdecor.PixDecor(
-        pixfn, lcfn,transfn, tlimits=tlimits, tex=None
+        pixfn, lcfn,transfn, tlimits=tlimits, tex=tex,
         )
     pixdcr.set_lc0(dmin['r'])
     pixdcr.set_hyperparameters()

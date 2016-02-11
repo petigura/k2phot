@@ -16,7 +16,7 @@ from astropy.io import fits
 import contextlib
 from matplotlib import pylab as plt
 from lightcurve import Lightcurve,Normalizer
-
+from sklearn.decomposition import PCA
 os.system('echo "pixel_decorrelation modules loaded:" $(date) ')
 
 class PixDecorBase(object):
@@ -192,6 +192,21 @@ class PixDecor(PixDecorBase):
         lc['f'] = norm.norm(lc['fsap'])
         lc = pd.merge(trans,lc,on='cad')
         lc['fmask'] = lc['f'].isnull() | lc['thrustermask'] | lc['bgmask']
+
+        # Set PCA mask
+        # Use the points that have already been masked out to condition the pca
+        X =lc[~lc.fmask]['xpr ypr'.split()]
+        pca = PCA(n_components=2)
+        pca.fit(X)
+        Xprime = pca.transform(X)
+        sig = 1.6 * np.median(np.abs(Xprime),axis=0) # robust sigma
+        fac = 3.0 # exclude if farther than 3 sig away
+
+        X =lc['xpr ypr'.split()]
+        Xprime = pca.transform(X)
+        newmask = (((np.abs(Xprime) / sig[np.newaxis] ) > fac).sum(1) > 0)
+        lc['fmask'] = lc['fmask'] | newmask
+
         lc['fdtmask'] = lc['fmask'].copy()
         self.lc0 = lc
 
