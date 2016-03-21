@@ -7,55 +7,10 @@ import pandas as pd
 import george
 
 from pdplus import LittleEndian
-
-from ses import total_precision_theory
 from matplotlib import pylab as plt
 import apertures
 
 os.system('echo "pixel_decorrelation modules loaded:" $(date) ')
-
-def kepmag_to_npix(kepmag):
-    """
-    Given the kepmag of given target star, provide a range of
-    apertures to search over we want to search over.
-    """
-    if 0 <= kepmag < 10:
-        npix = [32, 45, 64, 90, 128, 181, 256, 362, 512]
-    elif 10 <= kepmag < 14:
-        npix = [4.0, 5.7, 8.0, 11, 16, 22, 32, 45, 64, 90, 128, 181]
-    elif 14 <= kepmag < 25:
-        npix = [4.0, 5.7, 8.0, 11, 16, 22, 32, 45,]
-
-    return npix
-
-def npix_to_ap_type(npix):
-    """
-    Caculates the when we transition form circular apertures to region
-    apertures.
-    """
-    radius_switch = 4.0 # switch from circular to region aperture.
-    npix_switch = np.pi * radius_switch**2
-
-    if npix > npix_switch:
-        return 'region'
-    else:
-        return 'circular'
-
-def white_noise_estimate(kepmag):
-    """
-    Estimate White Noise
-    
-    The Gaussian Process noise model assumes that some of the variance
-    is white. 
-    """
-    fac = 2 # Factor by which to inflate Poisson and read noise estimate
-    noise_floor = 100e-6 # Do not allow noise estimate to fall below this amount
-    
-    # Estimate from Poisson and read noise.
-    sigma_th =  total_precision_theory(kepmag,10)
-    sigma_th *= fac
-    sigma_th = max(noise_floor,sigma_th)
-    return sigma_th
 
 def detrend_t_roll_2D(lc, sigma, length_t, length_roll, sigma_n, 
                       reject_outliers=False,debug=False):
