@@ -4,6 +4,8 @@ import matplotlib
 from scipy.misc import imresize
 from matplotlib import pylab as plt
 import pandas as pd
+import astropy.wcs
+
 class Aperture(object):
     """
     Class for denfining apertures
@@ -30,9 +32,9 @@ class Aperture(object):
         if len(args)==0:
             return None
         
-        assert len(args)==5, "args = im, locx, locy, ap_type, npix"
+        assert len(args)==6, "args = im, im_header, locx, locy, ap_type, npix"
 
-        im, locx, locy, ap_type, npix = args
+        im, im_header, locx, locy, ap_type, npix = args
     
         if ap_type=='circular':
             radius = np.sqrt( npix / np.pi )
@@ -45,8 +47,10 @@ class Aperture(object):
 
         verts = _ap.verts
         verts = pd.DataFrame(verts, columns=['x','y']) 
-        verts['ra'] = -1.0
-        verts['dec'] = -1.0
+        
+        # Convert x, y to sky coordinates
+        wcs = astropy.wcs.find_all_wcs(im_header,keysel=['binary'])[0]
+        verts['ra'], verts['dec'] = wcs.all_pix2world(verts.x,verts.y,0)
 
         self.verts = verts
         self.weights = _ap.weights

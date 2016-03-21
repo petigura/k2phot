@@ -1,4 +1,5 @@
 from cStringIO import StringIO as sio
+import os
 
 import numpy as np
 from numpy import ma

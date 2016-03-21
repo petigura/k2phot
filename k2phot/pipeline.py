@@ -23,6 +23,7 @@ from config import bjd0
 from channel_transform import read_channel_transform
 from config import bjd0, noisekey, noisename, rbg
 import phot
+from matplotlib import pylab as plt
 
 class Pipeline(object):
     """Pipeline class
@@ -50,12 +51,14 @@ class Pipeline(object):
 
     def __init__(self, pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], 
                  tex=None):
+        hduL = fits.open(pixfn)
         self.pixfn = pixfn
         self.lcfn = lcfn
         self.transfn = transfn
-        self.kepmag = fits.open(pixfn)[0].header['KEPMAG']
+        self.kepmag = hduL[0].header['KEPMAG']
         self.basename = os.path.splitext(lcfn)[0]
         self.starname = os.path.basename(self.basename)
+        self.im_header = hduL[1].header
 
         # Define skeleton light curve. This pandas DataFrame contains all
         # the columns that don't depend on which aperture is used.
@@ -80,7 +83,9 @@ class Pipeline(object):
         
     def get_aperture(self, ap_type, npix):
         """Convenience function for defining apertures"""
-        ap = apertures.Aperture(self.ap_im, self.x, self.y, ap_type, npix)
+        ap = apertures.Aperture(
+            self.ap_im, self.im_header, self.x, self.y, ap_type, npix
+            )
         return ap
         
     def get_default_apertures(self):
@@ -101,8 +106,14 @@ class Pipeline(object):
         """
         # Define skeleton light-curve
         # Include pixel transformation information 
+        
+        im_aper = np.nanpercentile(self.im.flux,90,axis=0)
+        im_aper = ma.masked_invalid(im_aper)
+        im_aper.fill_value = 0 
+        im_aper = im_aper.filled()
+
         self.im.ap = apertures.Aperture(
-            self.im.flux[0], self.x, self.y, ap_type, npix
+            im_aper, self.im_header, self.x, self.y, ap_type, npix
             )
         self.im.set_fbackground()
 
@@ -127,6 +138,21 @@ class Pipeline(object):
         lc['fmask'] = lc['f'].isnull() | lc['thrustermask'] | lc['bgmask']
         lc['fdtmask'] = lc['fmask'].copy()
         self.lc0 = lc
+
+    @contextlib.contextmanager
+    def FigureManager(self,suffix):
+        """
+        A small context manager that pops figures and resolves the output
+        filepath
+        """
+        plt.figure() # Executes before code block
+        yield # Now run the code block
+        figpath = self.basename+suffix
+        plt.savefig(figpath,dpi=160)
+        plt.close('all')
+        print "created %s " % figpath
+
+    ### k2phot pipeline ###
 
     def set_hyperparameters(self):
         """
@@ -211,23 +237,9 @@ class Pipeline(object):
         dmin['raw'] = dmin['f_'+noisename]
         dmin['cor'] = dmin['fdt_'+noisename]
         dmin['fac'] = dmin['raw'] / dmin['cor'] *100
-
         outstr = "Noise Level (%(noisename)s) : Raw=%(raw).1f (ppm), Corrected=%(cor).1f (ppm); Improvement = %(fac).1f %%" % dmin
         
         return outstr
-
-    @contextlib.contextmanager
-    def FigureManager(self,suffix):
-        """
-        A small context manager that pops figures and resolves the output
-        filepath
-        """
-        plt.figure() # Executes before code block
-        yield # Now run the code block
-        figpath = self.basename+suffix
-        plt.savefig(figpath,dpi=160)
-        plt.close('all')
-        print "created %s " % figpath
 
 def run(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None, 
              debug=False, ap_select_tlimits=None):
@@ -243,7 +255,7 @@ def run(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
     print "ap_select_tlimits = {}".format(ap_select_tlimits)
 
     pipe = Pipeline(
-           pixfn, lcfn,transfn, tlimits=ap_select_tlimits, tex=None
+           pixfn, lcfn,transfn, tlimits=tlimits, tex=None
            )
 
     pipe.set_lc0('circular',10)
@@ -266,10 +278,9 @@ def run(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
     df['noise'] = None
     df['npix'] = 0
     for i,row in df.iterrows():
-        phot = pipe.detrend_t_roll_2D(row.aper)
-        df.ix[i,'phot'] = phot
-        df.ix[i,'phot'] = pipe.detrend_t_roll_2D(row.aper)
-        ap_noise = phot.ap_noise
+        _phot = pipe.detrend_t_roll_2D(row.aper)
+        df.ix[i,'phot'] = _phot
+        ap_noise = _phot.ap_noise
         ap_noise.index = ap_noise.name
         df.ix[i,'noise'] = ap_noise.ix[noisekey+'_'+noisename].value
         df.ix[i,'npix'] = row.aper.npix
@@ -282,71 +293,36 @@ def run(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
 
     df = df.append(row, ignore_index=True)
     df.loc[df.default,'to_fits'] = True
+    pipe.dfaper = df
     print df.sort('npix')['fits_group npix noise to_fits'.split()]
 
     print "saving to {}".format(lcfn) 
     for i,row in df[df.to_fits].iterrows():
         row.phot.to_fits(lcfn,row.fits_group)
 
-
-def old_pipeline():
-    pixdcr = pixdecor.PixDecor(
-        pixfn, lcfn,transfn, tlimits=ap_select_tlimits, tex=None
-        )
-    pixdcr.set_lc0(3)
-
-    if debug:
-        npts = len(pixdcr.lc0)
-        idx = [int(0.25*npts),int(0.50*npts)]
-
-        tlimits = [pixdcr.lc0.iloc[i]['t'] - bjd0 for i in idx]
-        pixdcr = pixdecor.PixDecor(
-            pixfn, lcfn,transfn, tlimits=tlimits, tex=None
-        )
-        pixdcr.apertures = [3,4]
-        pixdcr.set_lc0(3)
-    pixdcr.set_hyperparameters()
-    pixdcr.reject_outliers()
-    pixdcr.scan_aperture_size()
-    dfaper = pixdcr.dfaper
-    dmin = dfaper.iloc[0]
-    
-    pixdcr = pixdecor.PixDecor(
-        pixfn, lcfn,transfn, tlimits=tlimits, tex=None
-        )
-    pixdcr.set_lc0(dmin['r'])
-    pixdcr.set_hyperparameters()
-    pixdcr.reject_outliers()
-
-    # Sub in best-fitting radius from previous iteration
-    pixdcr.dfaper = dfaper
-    pixdcr.dmin = dmin 
-    detrend_dict = pixdcr.detrend_t_roll_2D(dmin['r'])
-    pixdcr.lc = detrend_dict['lc']
-    pixdcr.to_fits(lcfn)
-
     if 0:
         from matplotlib import pylab as plt
+
         plt.ion()
         plt.figure()
         import pdb;pdb.set_trace()
 
-    with pixdcr.FigureManager('_0-median-frame.png'):
-        plotting.medframe(pixdcr)
 
-    with pixdcr.FigureManager('_1-background.png'):
-        plotting.background(pixdcr)
+    _phot = phot.read_fits(lcfn,'optimum')
+    with pipe.FigureManager('_0-median-frame.png'):
+        plotting.phot.medframe(_phot)
 
-    with pixdcr.FigureManager('_2-noise_vs_aperture_size.png'):
-        plotting.noise_vs_aperture_size(pixdcr)
+    with pipe.FigureManager('_1-background.png'):
+        plotting.phot.background(_phot)
 
-    with pixdcr.FigureManager("_3-fdt_t_roll_2D.png"):
-        plotting.detrend_t_roll_2D(pixdcr)
+    with pipe.FigureManager('_2-noise_vs_aperture_size.png'):
+        plotting.pipeline.noise_vs_aperture_size(pipe)
 
-    with pixdcr.FigureManager("_4-fdt_t_roll_2D_zoom.png"):
-        plotting.detrend_t_roll_2D(pixdcr,zoom=True)
+    with pipe.FigureManager("_3-fdt_t_roll_2D.png"):
+        plotting.phot.detrend_t_roll_2D(_phot)
 
-    with pixdcr.FigureManager("_5-fdt_t_rollmed.png"):
-        plotting.detrend_t_rollmed(pixdcr)
+    with pipe.FigureManager("_4-fdt_t_roll_2D_zoom.png"):
+        plotting.phot.detrend_t_roll_2D(_phot,zoom=True)
 
-
+    with pipe.FigureManager("_5-fdt_t_rollmed.png"):
+        plotting.phot.detrend_t_rollmed(_phot)
