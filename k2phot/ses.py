@@ -257,4 +257,5 @@ def ma_mad(arr):
 @check_masked
 def ma_std(arr):
     """Compute STD"""
-    ma.std(arr)
+    return ma.std(arr)
+    
