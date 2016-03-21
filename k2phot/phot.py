@@ -88,6 +88,10 @@ class Photometry(object):
         self.pixfn = pixfn 
         self.extra_header = extra_header
 
+    def name_mag(self):
+        """Return formatted name and magnitdue"""
+        return "{OBJECT},KEPMAG={KEPMAG:.1f}".format(**self.header)
+
     def to_fits(self, fitsfn, group):
         """
         Package up photometry object as a fits file
@@ -101,10 +105,10 @@ class Photometry(object):
         hdu_primary.header['VERSION'] = _VERSION
         hdu_primary.header['EXTNAME'] = 'primary'
         # Construct median frame HDU
-        hdu_medframe = fits.ImageHDU(data=self.medframe)
+        hdu_medframe = fits.ImageHDU(
+            data=self.medframe,header=hduL_pixel[1].header
+            )
         hdu_medframe.header['EXTNAME'] = 'medframe'
-
-        #hdu_medframe.header = hduL_pixel[1].header
         
         # HDU that holds aperture weights 
         hdu_ap_weights = fits.ImageHDU(data=self.ap_weights)
@@ -152,10 +156,30 @@ def hdu_to_DataFrame(hdu):
     """
     return pd.DataFrame( LittleEndian( hdu.data) )    
 
-def read_fits(fitsfn, group):
-    hduL = fits.open(fitsfn)
+def read_fits(*args):
+    """Read in phot object from fits file
 
-    # Shared hdu
+    :param fitsfn: Path to fits function
+    :type fitsfn: string
+
+    :param group: Group that's read in. Omitting argument lists available groups
+    :type group: string
+    """
+
+    assert len(args) >=1,"read_fits(fitsfn, [group]) "
+    if len(args)==1:
+        fitsfn, = args
+        hduL = fits.open(fitsfn)
+        groups = [hdu.header['EXTNAME'] for hdu in hduL]
+        groups = [n.split('_')[0] for n in groups if n.count('_ap-noise')>0]
+        print "available groups"
+        print groups
+        return None
+
+    if len(args)==2:
+        fitsfn, group = args
+        hduL = fits.open(fitsfn)
+
     hdu_primary = hduL['primary']
     hdu_lc_shared = hduL['lc-shared']
     hdu_medframe = hduL['medframe']
@@ -172,9 +196,16 @@ def read_fits(fitsfn, group):
     lc_shared = hdu_to_DataFrame( hdu_lc_shared )
     ap_lc = hdu_to_DataFrame( hdu_ap_lc )
     lc = pd.concat([lc_shared,ap_lc],axis=1)
+
+    
+    fmed = lc['fsap'].median()  
+    lc['ftnd_t_roll_2D'] = lc['fsap'] - lc['fdt_t_roll_2D'] + fmed
+    lc['ftnd_t_rollmed'] = lc['fsap'] - lc['fdt_t_rollmed'] + fmed
+
     ap_noise = hdu_to_DataFrame( hdu_ap_noise )
 
     phot = Photometry(medframe, lc, ap_weights, ap_verts, ap_noise,)
+    phot.header = hdu_primary.header
     return phot
 
 # Covenience functions to facilitate fits writing
