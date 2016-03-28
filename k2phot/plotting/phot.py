@@ -5,6 +5,7 @@ Module for plotting phot object
 from .config import *
 from ..config import bjd0, timelabel
 from ..lightcurve import Lightcurve, Normalizer
+import finderchart
 
 def medframe(phot):
     """
@@ -13,12 +14,24 @@ def medframe(phot):
     medframe = phot.medframe
     medframe -= np.median(phot.lc['fbg'])
     imshow(phot.medframe)
+    shape = phot.medframe.shape
+
     verts = phot.ap_verts 
     plt.plot(verts.x,verts.y,color="LimeGreen",lw=2)
     plt.xlabel('Column (pixels)')
     plt.ylabel('Row (pixels)')
+    plt.xlim(-0.5,shape[1]-0.5)
+    plt.ylim(-0.5,shape[0]-0.5)
     tit = phot.name_mag()
     plt.title(tit)
+
+def aperture(phot):
+    fig = plt.figure(figsize=(8,4))
+    finderchart.dss(phot, subplot_args=(122,))
+    ax = fig.add_subplot(121)
+    plt.sca(ax)
+    medframe(phot)
+    fig.set_tight_layout(True)
 
 def background(phot):
     lc = phot.lc
