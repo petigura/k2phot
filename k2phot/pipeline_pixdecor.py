@@ -83,6 +83,52 @@ class PipelinePixDecor(Pipeline):
             )
         return _phot
 
+    def noise_aperture(self, npix, dfaper):
+        """
+        Noise for different pixel sizes
+
+        Call ala
+
+        >>> dfaper = []
+        >>> minimize(noise_aperture, npix0, dfaper)
+
+        Returns
+        -------
+        noise at each value of pixel
+        """
+        if hasattr(npix, '__iter__'):
+            npix = npix[0]
+        npix = int(npix)
+        if npix < 4:
+            return 1e6
+
+        d = self._get_dfaper_row()
+        aper = self.get_aperture('region', npix)
+        d['aper'] = aper
+        d = self._detrend_dfaper_row(d)
+        dfaper += [d]
+        print "{aper} noise ({noisename}) = {noise:.1f} ppm".format(**d)
+        return d['noise']
+
+    def _detrend_dfaper_row(self, d):
+        """
+        Detrend dfaper_row
+
+        dfaper_row : dictionary with the aperture defined
+        """
+        aper = d['aper']
+        _phot = self.detrend_t_roll_2D(aper)
+        ap_noise = _phot.ap_noise
+        ap_noise.index = ap_noise.name
+
+        # Adding extra info to output dictionary
+        d['phot'] = _phot
+        d['noise'] = ap_noise.ix[noisekey+'_'+noisename].value
+        d['noisename'] = noisename
+        d['npix'] = aper.npix
+        d['fits_group'] = aper.name
+        return d
+
     def raw_corrected(self):
         dmin = dict(self.dfaper.iloc[0])
         dmin['noisename'] = noisename
@@ -99,9 +145,6 @@ def run(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
     Run the pixel decorrelation on pixel file
     """
 
-    # Small, med, and large apertures 
-    DEFAULT_AP_RADII = [1.5, 3, 8] 
-
     pipe = PipelinePixDecor(
            pixfn, lcfn,transfn, tlimits=tlimits, tex=None
            )
@@ -110,43 +153,19 @@ def run(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
     pipe.set_lc0('circular',10)
     pipe.set_hyperparameters()
     pipe.reject_outliers()
-    apers = pipe.get_default_apertures()
 
-    df = pd.DataFrame(dict(aper=apers))
-    df['default'] = False # 
-    df['fits_group'] = '' 
-    for r in DEFAULT_AP_RADII:
-        npix = np.pi * r **2 
-        aper = pipe.get_aperture('circular', npix)
-        row = dict(aper=aper, default=True, fits_group=aper.name)
-        row  = pd.Series( row ) 
-        df = df.append(row, ignore_index=True)
-
-    df['phot'] = None
-    df['noise'] = None
-    df['npix'] = 0
-    for i,row in df.iterrows():
-        _phot = pipe.detrend_t_roll_2D(row.aper)
-        df.ix[i,'phot'] = _phot
-        ap_noise = _phot.ap_noise
-        ap_noise.index = ap_noise.name
-        df.ix[i,'noise'] = ap_noise.ix[noisekey+'_'+noisename].value
-        df.ix[i,'npix'] = row.aper.npix
-        df.ix[i,'fits_group'] = row.aper.name
-        
-    df['to_fits'] = False
-    row = df.loc[df.noise.idxmin()].copy()
+    dfaper = pipe.get_dfaper_default()
+    dfaper = pipe.detrend_dfaper(dfaper)
+    dfaper_optimize = pipe.optimize_aperture()
+    dfaper = dfaper + dfaper_optimize
+    dfaper = pd.DataFrame(dfaper)
+    row = dfaper.loc[dfaper.noise.idxmin()].copy()
     row['to_fits'] = True
     row['fits_group'] = 'optimum'
-
-    df = df.append(row, ignore_index=True)
-    df.loc[df.default,'to_fits'] = True
-    pipe.dfaper = df
-    print df.sort('npix')['fits_group npix noise to_fits'.split()]
-
-    print "saving to {}".format(lcfn) 
-    for i,row in df[df.to_fits].iterrows():
-        row.phot.to_fits(lcfn,row.fits_group)
+    dfaper = dfaper.append(row, ignore_index=True)
+    pipe.dfaper = dfaper
+    print dfaper.sort('npix')['fits_group npix noise to_fits'.split()]
+    pipe.to_fits(pipe.lcfn)
 
     if 0:
         from matplotlib import pylab as plt
@@ -155,8 +174,8 @@ def run(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
         import pdb;pdb.set_trace()
 
     _phot = phot.read_fits(lcfn,'optimum')
-    with pipe.FigureManager('_0-median-frame.png'):
-        plotting.phot.medframe(_phot)
+    with pipe.FigureManager('_0-aperture.png'):
+        plotting.phot.aperture(_phot)
 
     with pipe.FigureManager('_1-background.png'):
         plotting.phot.background(_phot)

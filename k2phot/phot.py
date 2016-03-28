@@ -1,8 +1,9 @@
 from astropy.io import fits
-from config import bjd0, noisekey, noisename, rbg
+from config import bjd0
 import pandas as pd
 import numpy as np
 from pdplus import LittleEndian
+import os.path
 
 _COLDEFS_LC_SHARED = [
     ["thrustermask","L","Thruster fire","bool"],
@@ -96,14 +97,13 @@ class Photometry(object):
         """
         Package up photometry object as a fits file
         """
-
         # Construct primary header
         hduL_pixel = fits.open(self.pixfn)
         hdu_primary = hduL_pixel[0]
-#        for header in self.extra_header:
-#            hdu_primary.header[key] = ( getattr(self,key), description )
         hdu_primary.header['VERSION'] = _VERSION
         hdu_primary.header['EXTNAME'] = 'primary'
+        hdu_primary.header['EXTEND'] = 'T'
+
         # Construct median frame HDU
         hdu_medframe = fits.ImageHDU(
             data=self.medframe,header=hduL_pixel[1].header
@@ -145,8 +145,23 @@ class Photometry(object):
             hdu_ap_lc,
             hdu_ap_noise,
         ]
-        hduL = fits.HDUList(hduL)
-        hduL.writeto(fitsfn,clobber=True)
+        write_hduL(fitsfn,hduL)
+def write_hduL(fitsfn,hduL):
+    # If file doesn't exist, add the primary header
+    hdu_primary = hduL[0]
+    if os.path.exists(fitsfn) is False:
+        fits.append(fitsfn, hdu_primary.data, header=hdu_primary.header)
+
+    hduL = hduL[1:]
+    for hdu in hduL:
+        data = hdu.data
+        extname = hdu.header['EXTNAME']
+        header = hdu.header
+        try:
+            fits.update(fitsfn, data, extname, header=header)
+        except KeyError:
+            fits.append(fitsfn, data, header=header)
+
 
 def extname(group, suffix):
     return "{}_{}".format(group,suffix)
@@ -174,7 +189,7 @@ def read_fits(*args):
         groups = [n.split('_')[0] for n in groups if n.count('_ap-noise')>0]
         print "available groups"
         print groups
-        return None
+        return groups
 
     if len(args)==2:
         fitsfn, group = args
@@ -206,6 +221,7 @@ def read_fits(*args):
 
     phot = Photometry(medframe, lc, ap_weights, ap_verts, ap_noise,)
     phot.header = hdu_primary.header
+    phot.header_medframe = hdu_medframe.header
     return phot
 
 # Covenience functions to facilitate fits writing

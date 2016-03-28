@@ -9,6 +9,7 @@ from astropy.io import fits
 import pandas as pd
 from matplotlib import pylab as plt
 from numpy import ma
+from scipy.optimize import minimize
 
 import phot
 import imagestack 
@@ -16,6 +17,7 @@ import apertures
 from lightcurve import Lightcurve, Normalizer
 from channel_transform import read_channel_transform
 from ses import total_precision_theory
+
 
 class Pipeline(object):
     """Pipeline class
@@ -40,6 +42,8 @@ class Pipeline(object):
         "fdt_t_rollmed",
         "ftnd_t_rollmed",
     ]
+    # Small, med, and large apertures 
+    DEFAULT_AP_RADII = [1.5, 3, 8] 
 
     def __init__(self, pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], 
                  tex=None):
@@ -80,15 +84,6 @@ class Pipeline(object):
             )
         return ap
         
-    def get_default_apertures(self):
-        # Set default apertures to scan over
-        _apertures = []
-        for npix in kepmag_to_npix(self.kepmag):
-            ap_type = npix_to_ap_type(npix)
-            ap = self.get_aperture(ap_type, npix)
-            _apertures.append(ap)
-        return _apertures
-
     def set_lc0(self, ap_type, npix):
         """
         Set Skeleton Lightcurve
@@ -125,6 +120,68 @@ class Pipeline(object):
         lc['fdtmask'] = lc['fmask'].copy()
         self.lc0 = lc
 
+    def _get_dfaper_row(self):
+        """Return an empty dictionary to store info from aperture scan"""
+        d = dict(
+            aper=None,  npix=None, to_fits=False, 
+            fits_group='', phot=None, noise=None,
+            )
+        return d
+
+    def detrend_dfaper(self, dfaper):
+        """
+        Loops over _detrend_dfaper_row
+        """
+        for i in range(len(dfaper)):
+            dfaper_row = dfaper[i]
+            dfaper[i] = self._detrend_dfaper_row(dfaper_row)
+
+        return dfaper
+
+    def get_dfaper_default(self):
+        dfaper = []
+
+        # Default apertures. These are automatically written out
+        for r in self.DEFAULT_AP_RADII:
+            d = self._get_dfaper_row()
+            npix = np.pi * r **2 
+            aper = self.get_aperture('circular', npix)            
+            d['aper'] = aper
+            d['npix'] = npix
+            d['to_fits'] = True 
+            d['fits_group'] = aper.name
+            dfaper.append(d)
+
+        return dfaper
+
+    def get_dfaper_kepmag_to_npix(self):
+        dfaper = []
+        for npix in kepmag_to_npix(self.kepmag):
+            d = self._get_dfaper_row()
+            ap_type = npix_to_ap_type(npix)
+            aper = self.get_aperture(ap_type, npix)
+            d['aper'] = aper
+            d['npix'] = npix
+            d['fits_group'] = aper.name
+            dfaper.append(d)
+        dfaper = pd.DataFrame(dfaper)
+        return dfaper 
+
+    def optimize_aperture(self):
+        hduL = fits.open(self.pixfn)
+        # Start with number of pixels in the Kepler aperture
+        npix0 = (hduL[2].data==3).sum() 
+        if npix0==0:
+            npix0 = 12
+            print "No aperture from fits file, chosing npix={}".format(npix0)
+        
+        dfaper = []
+        res = minimize(
+            self.noise_aperture, npix0, args=(dfaper,),method='Powell' ,
+            options=dict(xtol=1,direc=[1],ftol=1)
+            )
+        return dfaper
+
     def get_diagnostic_info(self, d):
         sdisp = "starname=%s " % self.starname
         sdisp += "r=%(r).1f " % d
@@ -155,6 +212,13 @@ class Pipeline(object):
         plt.savefig(figpath,dpi=160)
         plt.close('all')
         print "created %s " % figpath
+    
+    def to_fits(self, lcfn):
+        dfaper = self.dfaper
+        print "saving to {}".format(lcfn) 
+        for i,row in dfaper[dfaper.to_fits].iterrows():
+            print "saving to {}".format(row.fits_group) 
+            row.phot.to_fits(lcfn,row.fits_group)
 
 def kepmag_to_npix(kepmag):
     """
