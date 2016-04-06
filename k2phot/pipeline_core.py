@@ -130,7 +130,8 @@ class Pipeline(object):
 
     def detrend_dfaper(self, dfaper):
         """
-        Loops over _detrend_dfaper_row
+        Loops over `_detrend_dfaper_row` which is defined in the
+        classes that inherit from Pipeline
         """
         for i in range(len(dfaper)):
             dfaper_row = dfaper[i]

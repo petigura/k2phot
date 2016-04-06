@@ -11,6 +11,11 @@ from pipeline_core import Pipeline, white_noise_estimate
 from lightcurve import Lightcurve, Normalizer
 from config import bjd0, noisekey, noisename
 
+import k2sc.k2sc
+import k2sc.k2data
+from astropy.io import fits
+import pyfits as pf
+
 class PipelineK2SC(Pipeline):
     """
     Pipeline Object for running the pixel decorrelation pipeline
@@ -25,6 +30,110 @@ class PipelineK2SC(Pipeline):
     :type tranfn: str
     """
 
+    def get_K2Data(self, ap):
+        """
+        Returns the an instance of K2Data passed around the `k2sc` pipeline
+        """
+        self.set_lc0(ap.ap_type,ap.npix)
+        hduL = fits.open(self.pixfn)
+        quality = hduL[1].data['QUALITY']
+        fluxes = self.lc0['fsap']
+        time = self.lc0['t'] - bjd0
+        cadence = self.lc0['cad']
+
+        # Stand in for true photometric errors
+        errors = fluxes * (60 * 30 * self.lc0['fsap'].median() )**-0.5
+        pos = self.lc0['xpr ypr'.split()]
+        pos -= pos.mean()
+        head = pf.getheader(self.pixfn, 0)
+#        head = fits.getheader(self.pixfn, 0)
+        epic = head['KEPLERID']
+        x = pos['xpr']
+        y = pos['ypr']
+
+        time = np.array(time)
+        cadence = np.array(cadence)
+        quality = np.array(quality)
+        fluxes = np.array(fluxes)
+        errors = np.array(errors)
+        x = np.array(x)
+        y = np.array(y)
+        _K2Data = k2sc.k2data.K2Data(
+            epic,
+            time=time,
+            cadence=cadence,
+            quality=quality,
+            fluxes=fluxes,
+            errors=errors,
+            x=x,
+            y=y,
+            sap_header=head
+        )    
+        
+        return _K2Data
+
+    def detrend(self, ap):
+        # Create new lightcurve from skeleton
+
+        k2data = self.get_K2Data(ap)
+        splits = [2180]
+        results = k2sc.k2sc.main(k2data, splits, de_niter=1)
+        return results
+        
+
+#        self.im.ap = ap
+#        lc['fsap'] = self.im.get_sap_flux()
+#        norm = Normalizer(lc['fsap'].median()) 
+#        lc['f'] = norm.norm(lc['fsap'])        
+#        lc['fdtmask'] = self.fdtmask 
+#        lc = pixdecor.detrend_t_roll_2D( 
+#            lc, self.sigma, self.length_t, self.length_roll,self.sigma_n, 
+#            reject_outliers=False
+#            )
+#
+#        # Cast as Lightcurve object
+#        lc = Lightcurve(lc)
+#        noise = []
+#        for key in [noisekey,'f']:
+#            ses = lc.get_ses(key) 
+#            ses = pd.DataFrame(ses)
+#            ses['name'] = ses.index
+#            ses['name'] = key +'_' + ses['name'] 
+#            ses = ses[['name','value']]
+#            noise.append(ses)
+#
+#        noise = pd.concat(noise,ignore_index=True)
+#        for k in self.unnormkeys:
+#            lc[k] = norm.unnorm(lc[k])
+#
+#
+#
+#        _phot = phot.Photometry(
+#            self.medframe, lc, ap.weights, ap.verts, noise, pixfn=self.pixfn
+#            )
+#
+#        return _phot
+
+
+    def _detrend_dfaper_row(self, d):
+        """
+        Detrend dfaper_row
+
+        dfaper_row : dictionary with the aperture defined
+        """
+        aper = d['aper']
+        _phot = self.detrend(aper)
+        ap_noise = _phot.ap_noise
+        ap_noise.index = ap_noise.name
+
+        # Adding extra info to output dictionary
+        d['phot'] = _phot
+        d['noise'] = ap_noise.ix[noisekey+'_'+noisename].value
+        d['noisename'] = noisename
+        d['npix'] = aper.npix
+        d['fits_group'] = aper.name
+        return d
+
 
 
 def run(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None, 
@@ -33,54 +142,27 @@ def run(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
     Run the pixel decorrelation on pixel file
     """
 
-    # Small, med, and large apertures 
-    DEFAULT_AP_RADII = [1.5, 3, 8] 
-
-    pipe = PipelineK2SC(
-           pixfn, lcfn, transfn, tlimits=tlimits, tex=None
+    pipe = PipelinePixDecor(
+           pixfn, lcfn,transfn, tlimits=tlimits, tex=None
            )
     
     pipe.print_parameters()
     pipe.set_lc0('circular',10)
     pipe.set_hyperparameters()
     pipe.reject_outliers()
-    apers = pipe.get_default_apertures()
 
-    df = pd.DataFrame(dict(aper=apers))
-    df['default'] = False # 
-    df['fits_group'] = '' 
-    for r in DEFAULT_AP_RADII:
-        npix = np.pi * r **2 
-        aper = pipe.get_aperture('circular', npix)
-        row = dict(aper=aper, default=True, fits_group=aper.name)
-        row  = pd.Series( row ) 
-        df = df.append(row, ignore_index=True)
-
-    df['phot'] = None
-    df['noise'] = None
-    df['npix'] = 0
-    for i,row in df.iterrows():
-        _phot = pipe.detrend_t_roll_2D(row.aper)
-        df.ix[i,'phot'] = _phot
-        ap_noise = _phot.ap_noise
-        ap_noise.index = ap_noise.name
-        df.ix[i,'noise'] = ap_noise.ix[noisekey+'_'+noisename].value
-        df.ix[i,'npix'] = row.aper.npix
-        df.ix[i,'fits_group'] = row.aper.name
-        
-    df['to_fits'] = False
-    row = df.loc[df.noise.idxmin()].copy()
+    dfaper = pipe.get_dfaper_default()
+    dfaper = pipe.detrend_dfaper(dfaper)
+    dfaper_optimize = pipe.optimize_aperture()
+    dfaper = dfaper + dfaper_optimize
+    dfaper = pd.DataFrame(dfaper)
+    row = dfaper.loc[dfaper.noise.idxmin()].copy()
     row['to_fits'] = True
     row['fits_group'] = 'optimum'
-
-    df = df.append(row, ignore_index=True)
-    df.loc[df.default,'to_fits'] = True
-    pipe.dfaper = df
-    print df.sort('npix')['fits_group npix noise to_fits'.split()]
-
-    print "saving to {}".format(lcfn) 
-    for i,row in df[df.to_fits].iterrows():
-        row.phot.to_fits(lcfn,row.fits_group)
+    dfaper = dfaper.append(row, ignore_index=True)
+    pipe.dfaper = dfaper
+    print dfaper.sort('npix')['fits_group npix noise to_fits'.split()]
+    pipe.to_fits(pipe.lcfn)
 
     if 0:
         from matplotlib import pylab as plt
@@ -89,8 +171,8 @@ def run(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
         import pdb;pdb.set_trace()
 
     _phot = phot.read_fits(lcfn,'optimum')
-    with pipe.FigureManager('_0-median-frame.png'):
-        plotting.phot.medframe(_phot)
+    with pipe.FigureManager('_0-aperture.png'):
+        plotting.phot.aperture(_phot)
 
     with pipe.FigureManager('_1-background.png'):
         plotting.phot.background(_phot)
@@ -106,3 +188,5 @@ def run(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
 
     with pipe.FigureManager("_5-fdt_t_rollmed.png"):
         plotting.phot.detrend_t_rollmed(_phot)
+
+
