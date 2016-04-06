@@ -88,6 +88,7 @@ class Photometry(object):
         self.ap_noise = ap_noise
         self.pixfn = pixfn 
         self.extra_header = extra_header
+        self.header = fits.open(self.pixfn)[0].header
 
     def name_mag(self):
         """Return formatted name and magnitdue"""

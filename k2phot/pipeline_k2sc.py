@@ -30,6 +30,15 @@ class PipelineK2SC(Pipeline):
     :type tranfn: str
     """
 
+
+    def __init__(self, pixfn, lcfn, transfn, splits, tlimits=[-np.inf,np.inf], 
+                 tex=None):
+        super(PipelineK2SC,self).__init__(
+            pixfn, lcfn, transfn, tlimits=tlimits,tex=tex
+            )
+
+        self.splits = splits
+
     def get_K2Data(self, ap):
         """
         Returns the an instance of K2Data passed around the `k2sc` pipeline
@@ -76,44 +85,28 @@ class PipelineK2SC(Pipeline):
         # Create new lightcurve from skeleton
 
         k2data = self.get_K2Data(ap)
-        splits = [2180]
-        results = k2sc.k2sc.main(k2data, splits, de_niter=1)
-        return results
+#        k2data, results = k2sc.k2sc.main(k2data, self.splits, de_niter=50, de_npop=50)
+        k2data, results = k2sc.k2sc.main(k2data, self.splits, de_niter=5)
+        result = results[0]
+
+        lc = self.lc0.copy()
         
+        # Subtract off time and position components
+        fsapmed = lc['fsap'].median()
+        lc['ftnd_t_roll_2D'] = result.tr_position + result.tr_time - fsapmed  
+        lc['fdt_t_roll_2D'] = lc['fsap'] - lc['ftnd_t_roll_2D'] + fsapmed
 
-#        self.im.ap = ap
-#        lc['fsap'] = self.im.get_sap_flux()
-#        norm = Normalizer(lc['fsap'].median()) 
-#        lc['f'] = norm.norm(lc['fsap'])        
-#        lc['fdtmask'] = self.fdtmask 
-#        lc = pixdecor.detrend_t_roll_2D( 
-#            lc, self.sigma, self.length_t, self.length_roll,self.sigma_n, 
-#            reject_outliers=False
-#            )
-#
-#        # Cast as Lightcurve object
-#        lc = Lightcurve(lc)
-#        noise = []
-#        for key in [noisekey,'f']:
-#            ses = lc.get_ses(key) 
-#            ses = pd.DataFrame(ses)
-#            ses['name'] = ses.index
-#            ses['name'] = key +'_' + ses['name'] 
-#            ses = ses[['name','value']]
-#            noise.append(ses)
-#
-#        noise = pd.concat(noise,ignore_index=True)
-#        for k in self.unnormkeys:
-#            lc[k] = norm.unnorm(lc[k])
-#
-#
-#
-#        _phot = phot.Photometry(
-#            self.medframe, lc, ap.weights, ap.verts, noise, pixfn=self.pixfn
-#            )
-#
-#        return _phot
+        # Subtract off position component
+        fsapmed = lc['fsap'].median()
+        lc['ftnd_t_rollmed'] = result.tr_position
+        lc['fdt_t_rollmed'] = lc['fsap'] - lc['ftnd_t_rollmed'] + fsapmed
 
+        noise = self.get_noise(lc)
+        _phot = phot.Photometry(
+            self.medframe, lc, ap.weights, ap.verts, noise, pixfn=self.pixfn
+            )
+
+        return _phot
 
     def _detrend_dfaper_row(self, d):
         """
@@ -134,17 +127,13 @@ class PipelineK2SC(Pipeline):
         d['fits_group'] = aper.name
         return d
 
-
-
-def run(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None, 
+def run(pixfn, lcfn, transfn, splits, tlimits=[-np.inf,np.inf], tex=None, 
              debug=False, ap_select_tlimits=None):
     """
     Run the pixel decorrelation on pixel file
     """
 
-    pipe = PipelinePixDecor(
-           pixfn, lcfn,transfn, tlimits=tlimits, tex=None
-           )
+    pipe = PipelineK2SC(pixfn,lcfn,transfn,splits,tlimits=tlimits)
     
     pipe.print_parameters()
     pipe.set_lc0('circular',10)
@@ -153,8 +142,6 @@ def run(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
 
     dfaper = pipe.get_dfaper_default()
     dfaper = pipe.detrend_dfaper(dfaper)
-    dfaper_optimize = pipe.optimize_aperture()
-    dfaper = dfaper + dfaper_optimize
     dfaper = pd.DataFrame(dfaper)
     row = dfaper.loc[dfaper.noise.idxmin()].copy()
     row['to_fits'] = True

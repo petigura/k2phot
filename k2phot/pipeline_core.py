@@ -17,7 +17,7 @@ import apertures
 from lightcurve import Lightcurve, Normalizer
 from channel_transform import read_channel_transform
 from ses import total_precision_theory
-
+from config import bjd0, noisekey, noisename
 
 class Pipeline(object):
     """Pipeline class
@@ -72,7 +72,7 @@ class Pipeline(object):
         # As the reference image to construct apertures, use the 90th
         # percentile flux value. When the bleed columns move around,
         # we want to capture all the photometry.
-        ap_im = self.im.get_percentile_frame(90)
+        ap_im = self.im.get_percentile_frame(99.9)
         ap_im.fill_value = 0
         ap_im = ap_im.filled()
         self.ap_im = ap_im
@@ -191,6 +191,37 @@ class Pipeline(object):
             k = k+'_'+noisename
             sdisp += "%s=%.1f " % (k,d[k] )
         return sdisp
+
+    def get_noise(self,lc):
+        """
+        Get noise DataFrame. 
+
+
+        Normalize the lightcurve. Compute noise
+        characteristics. Return DataFrame
+
+        :param lc:  Light curve. Should not be normalized.
+        :type pandas DataFrame:
+
+        """
+
+        lc = lc.copy()
+        norm = Normalizer(lc['fsap'].median()) 
+        lc['f'] = norm.norm(lc['fsap'])        
+
+        # Cast as Lightcurve object
+        lc = Lightcurve(lc)
+        noise = []
+        for key in [noisekey,'f']:
+            ses = lc.get_ses(key) 
+            ses = pd.DataFrame(ses)
+            ses['name'] = ses.index
+            ses['name'] = key +'_' + ses['name'] 
+            ses = ses[['name','value']]
+            noise.append(ses)
+
+        noise = pd.concat(noise,ignore_index=True)
+        return noise
 
     def name_mag(self):
         """Return formatted name and magnitdue"""

@@ -9,7 +9,6 @@ import phot
 import plotting
 from pipeline_core import Pipeline, white_noise_estimate
 from lightcurve import Lightcurve,Normalizer
-from config import bjd0, noisekey, noisename
 
 class PipelinePixDecor(Pipeline):
     """
@@ -63,20 +62,11 @@ class PipelinePixDecor(Pipeline):
             reject_outliers=False
             )
 
-        # Cast as Lightcurve object
-        lc = Lightcurve(lc)
-        noise = []
-        for key in [noisekey,'f']:
-            ses = lc.get_ses(key) 
-            ses = pd.DataFrame(ses)
-            ses['name'] = ses.index
-            ses['name'] = key +'_' + ses['name'] 
-            ses = ses[['name','value']]
-            noise.append(ses)
-
-        noise = pd.concat(noise,ignore_index=True)
+        # Un-normalize the data
         for k in self.unnormkeys:
             lc[k] = norm.unnorm(lc[k])
+
+        noise = self.get_noise(lc)
 
         _phot = phot.Photometry(
             self.medframe, lc, ap.weights, ap.verts, noise, pixfn=self.pixfn
