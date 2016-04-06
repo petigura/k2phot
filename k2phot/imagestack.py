@@ -64,8 +64,9 @@ class ImageStack(object):
             import pdb;pdb.set_trace()
 
         flux = ma.masked_array(self.flux,fill_value=0)
-        flux.mask = False
-        flux.mask[self.ap.weights > 0] = True # Mask out if included in aperture
+        ap_mask = self.ap.weights > 0
+        ap_mask = ap_mask[np.newaxis,:,:]
+        flux.mask = flux.mask | ap_mask # Mask out if included in aperture
         flux.mask = flux.mask | np.isnan(flux.data)
         flux = flux.reshape(-1,self.npix)
         self.fbg = np.array(ma.median(flux,axis=1))
