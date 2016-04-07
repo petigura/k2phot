@@ -18,6 +18,11 @@ from lightcurve import Lightcurve, Normalizer
 from channel_transform import read_channel_transform
 from ses import total_precision_theory
 from config import bjd0, noisekey, noisename
+import copy
+import plotting
+
+npix_scan_fac = 4
+npix_scan_trials = 6
 
 class Pipeline(object):
     """Pipeline class
@@ -120,68 +125,135 @@ class Pipeline(object):
         lc['fdtmask'] = lc['fmask'].copy()
         self.lc0 = lc
 
-    def _get_dfaper_row(self):
+    def _detrend_dfaper_row(self, d):
+        """
+        Takes a dictionary with detrending parameters, runs detrend() and
+        stores results.
+
+        :param d: 
+            dictionary with the following keys:
+            - phot
+            - noise
+            - noisename
+            - npix
+            - fits_group
+        """
+
+        aper = d['aper']
+        _phot = self.detrend(aper)
+        ap_noise = _phot.ap_noise
+        ap_noise.index = ap_noise.name
+
+        # Adding extra info to output dictionary
+        d['phot'] = _phot
+        d['noise'] = ap_noise.ix[noisekey+'_'+noisename].value
+        d['noisename'] = noisename
+        d['npix'] = aper.npix
+        d['fits_group'] = aper.name
+        return d
+
+    def _get_dfaper_row(self, aper=None):
         """Return an empty dictionary to store info from aperture scan"""
         d = dict(
             aper=None,  npix=None, to_fits=False, 
             fits_group='', phot=None, noise=None,
             )
+        if aper==None:
+            return d
+
+        d['aper'] = aper
+        d['npix'] = aper.npix
+        d['fits_group'] = aper.name
         return d
 
-    def detrend_dfaper(self, dfaper):
+    def aperture_scan(self, dfaper):
         """
-        Loops over `_detrend_dfaper_row` which is defined in the
-        classes that inherit from Pipeline
+        Loops over `_detrend_dfaper_row`
         """
         for i in range(len(dfaper)):
             dfaper_row = dfaper[i]
             dfaper[i] = self._detrend_dfaper_row(dfaper_row)
+        return dfaper
+
+    def aperture_polish_iteration(self,dfaper0):
+        dfaper = copy.deepcopy(dfaper0)
+
+        dfaper = pd.DataFrame(dfaper)
+        dfaper = dfaper.sort('npix')
+        dfaper.index = range(len(dfaper))
+
+        # Check to see if best aperture is bounded on both sides
+        idx_best = dfaper.noise.idxmin()
+        npix_best1 = dfaper.ix[idx_best,'npix']
+        npix_min = dfaper.npix.min()
+        npix_max = dfaper.npix.max()
+        print "npix_best = {}, npix_min = {}, npix_max = {}".format(
+            npix_best1, npix_min, npix_max)
+ 
+        is_npix_best_bounded = (npix_best1 > npix_min) & (npix_best1 < npix_max)
+        if is_npix_best_bounded is False:
+            return dfaper
+        
+        idx_fit = np.arange(3) - 1 + idx_best
+        noise_fit = dfaper.ix[idx_fit].noise
+        npix_fit = dfaper.ix[idx_fit].npix
+        c2, c1, c0 = np.polyfit(npix_fit, noise_fit,2)
+
+        npix_best2 = -0.5 * c1 / c2
+        npix_best2 = np.round( npix_best2 )
+        print "new guess for npix_best2 = {}".format(npix_best2)
+
+        d = self._get_dfaper_row(self.get_aperture('region',npix_best2))
+        d = self._detrend_dfaper_row(d)
+        dfaper0.append(d)
+        return dfaper0, npix_best1, npix_best2
+
+    def aperture_polish(self,dfaper, max_iterations=3):
+        i = 0
+        while i < max_iterations:
+            dfaper, npix_best1, npix_best2 = \
+                self.aperture_polish_iteration(dfaper)
+            if npix_best1==npix_best2:
+                return dfaper
+
+            i += 1
 
         return dfaper
 
     def get_dfaper_default(self):
+        """
+        Get default values of dfaper. Returns list of dictionaries
+        """
         dfaper = []
-
-        # Default apertures. These are automatically written out
         for r in self.DEFAULT_AP_RADII:
-            d = self._get_dfaper_row()
             npix = np.pi * r **2 
             aper = self.get_aperture('circular', npix)            
-            d['aper'] = aper
-            d['npix'] = npix
-            d['to_fits'] = True 
-            d['fits_group'] = aper.name
+            d = self._get_dfaper_row(aper=aper)
+            d['to_fits'] = True
             dfaper.append(d)
 
         return dfaper
 
-    def get_dfaper_kepmag_to_npix(self):
+    def get_dfaper_scan(self):
+        """
+        Return trial values of dfaper computed from Kepler magnitude
+        """
         dfaper = []
-        for npix in kepmag_to_npix(self.kepmag):
-            d = self._get_dfaper_row()
-            ap_type = npix_to_ap_type(npix)
-            aper = self.get_aperture(ap_type, npix)
-            d['aper'] = aper
-            d['npix'] = npix
-            d['fits_group'] = aper.name
+        for npix in kepmag_to_npix_scan(self.kepmag):
+            aper = self.get_aperture('region', npix)
+            d = self._get_dfaper_row(aper=aper)
             dfaper.append(d)
-        dfaper = pd.DataFrame(dfaper)
+
         return dfaper 
 
-    def optimize_aperture(self):
-        hduL = fits.open(self.pixfn)
-        # Start with number of pixels in the Kepler aperture
-        npix0 = (hduL[2].data==3).sum() 
-        if npix0==0:
-            npix0 = 12
-            print "No aperture from fits file, chosing npix={}".format(npix0)
-        
-        dfaper = []
-        res = minimize(
-            self.noise_aperture, npix0, args=(dfaper,),method='Powell' ,
-            options=dict(xtol=1,direc=[1],ftol=1)
-            )
-        return dfaper
+    def get_aperture_guess(self):
+        """
+        Return trial values of dfaper computed from Kepler magnitude
+        """
+        npix = kepmag_to_npix(self.kepmag)
+        aper = self.get_aperture('region', npix)
+        return aper
+
 
     def get_diagnostic_info(self, d):
         sdisp = "starname=%s " % self.starname
@@ -196,23 +268,23 @@ class Pipeline(object):
         """
         Get noise DataFrame. 
 
-
         Normalize the lightcurve. Compute noise
         characteristics. Return DataFrame
 
         :param lc:  Light curve. Should not be normalized.
-        :type pandas DataFrame:
+        :type pandas.DataFrame:
 
         """
 
         lc = lc.copy()
         norm = Normalizer(lc['fsap'].median()) 
-        lc['f'] = norm.norm(lc['fsap'])        
+        lc['f'] = lc['fsap']
 
         # Cast as Lightcurve object
         lc = Lightcurve(lc)
         noise = []
         for key in [noisekey,'f']:
+            lc[key] = norm.norm(lc[key])
             ses = lc.get_ses(key) 
             ses = pd.DataFrame(ses)
             ses['name'] = ses.index
@@ -244,6 +316,32 @@ class Pipeline(object):
         plt.savefig(figpath,dpi=160)
         plt.close('all')
         print "created %s " % figpath
+
+    def plot_diagnostics(self):
+        if 0:
+            from matplotlib import pylab as plt
+            plt.ion()
+            plt.figure()
+            import pdb;pdb.set_trace()
+
+        _phot = phot.read_fits(self.lcfn,'optimum')
+        with self.FigureManager('_0-aperture.png'):
+            plotting.phot.aperture(_phot)
+
+        with self.FigureManager('_1-background.png'):
+            plotting.phot.background(_phot)
+
+        with self.FigureManager('_2-noise_vs_aperture_size.png'):
+            plotting.pipeline.noise_vs_aperture_size(self)
+
+        with self.FigureManager("_3-fdt_t_roll_2D.png"):
+            plotting.phot.detrend_t_roll_2D(_phot)
+
+        with self.FigureManager("_4-fdt_t_roll_2D_zoom.png"):
+            plotting.phot.detrend_t_roll_2D(_phot,zoom=True)
+
+        with self.FigureManager("_5-fdt_t_rollmed.png"):
+            plotting.phot.detrend_t_rollmed(_phot)
     
     def to_fits(self, lcfn):
         dfaper = self.dfaper
@@ -252,7 +350,39 @@ class Pipeline(object):
             print "saving to {}".format(row.fits_group) 
             row.phot.to_fits(lcfn,row.fits_group)
 
-def kepmag_to_npix(kepmag):
+def kepmag_to_npix_scan(kepmag):
+    npixfit = kepmag_to_npix(kepmag,plot=False)
+    npixfit_min = npixfit / npix_scan_fac
+    npixfit_max = npixfit * npix_scan_fac
+    npix = np.logspace( 
+        np.log10(npixfit_min), np.log10(npixfit_max), npix_scan_trials
+        ) 
+    npix = np.round(npix).astype(int)
+    return npix
+
+def kepmag_to_npix(kepmag,plot=False):
+    fn = 'optimal_aperture_sizes.csv'
+    dirn = os.path.dirname( os.path.dirname( __file__ ) )
+    fn = os.path.join( dirn, 'data/', fn )
+    df = pd.read_csv(fn)
+    df['lognpix'] = np.log10(df.npix)
+    p1 = np.polyfit(df.kepmag,df.lognpix,1)
+    npixfit = 10**np.polyval(p1,kepmag) 
+
+    if plot:
+        plt.semilogy()
+        df['npixfit'] = 10**np.polyval(p1,df.kepmag)
+        df['npixfit_upper'] = df['npixfit'] * npix_scan_fac
+        df['npixfit_lower'] = df['npixfit'] / npix_scan_fac
+        plt.plot(df.kepmag,df.npix,'.')
+        plt.plot(df.kepmag,df.npixfit)
+        plt.plot(df.kepmag,df.npixfit_lower)
+        plt.plot(df.kepmag,df.npixfit_upper)
+
+
+    return npixfit
+
+def kepmag_to_npix2(kepmag):
     """
     Given the kepmag of given target star, provide a range of
     apertures to search over we want to search over.
@@ -294,3 +424,8 @@ def white_noise_estimate(kepmag):
     sigma_th *= fac
     sigma_th = max(noise_floor,sigma_th)
     return sigma_th
+
+
+
+
+

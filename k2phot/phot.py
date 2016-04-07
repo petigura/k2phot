@@ -220,7 +220,9 @@ def read_fits(*args):
 
     ap_noise = hdu_to_DataFrame( hdu_ap_noise )
 
-    phot = Photometry(medframe, lc, ap_weights, ap_verts, ap_noise,)
+    phot = Photometry(
+        medframe, lc, ap_weights, ap_verts, ap_noise, pixfn=fitsfn
+        )
     phot.header = hdu_primary.header
     phot.header_medframe = hdu_medframe.header
     return phot

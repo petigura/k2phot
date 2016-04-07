@@ -49,7 +49,7 @@ class PipelinePixDecor(Pipeline):
             )
         self.fdtmask = lc['fdtmask'].copy() 
 
-    def detrend_t_roll_2D(self, ap):
+    def detrend(self, ap):
         # Create new lightcurve from skeleton
         lc = self.lc0.copy()
         self.im.ap = ap
@@ -99,35 +99,6 @@ class PipelinePixDecor(Pipeline):
         dfaper += [d]
         print "{aper} noise ({noisename}) = {noise:.1f} ppm".format(**d)
         return d['noise']
-
-    def _detrend_dfaper_row(self, d):
-        """
-        Detrend dfaper_row
-
-        dfaper_row : dictionary with the aperture defined
-        """
-        aper = d['aper']
-        _phot = self.detrend_t_roll_2D(aper)
-        ap_noise = _phot.ap_noise
-        ap_noise.index = ap_noise.name
-
-        # Adding extra info to output dictionary
-        d['phot'] = _phot
-        d['noise'] = ap_noise.ix[noisekey+'_'+noisename].value
-        d['noisename'] = noisename
-        d['npix'] = aper.npix
-        d['fits_group'] = aper.name
-        return d
-
-    def raw_corrected(self):
-        dmin = dict(self.dfaper.iloc[0])
-        dmin['noisename'] = noisename
-        dmin['raw'] = dmin['f_'+noisename]
-        dmin['cor'] = dmin['fdt_'+noisename]
-        dmin['fac'] = dmin['raw'] / dmin['cor'] *100
-        outstr = "Noise Level (%(noisename)s) : Raw={raw:.1f} (ppm), Corrected={cor:.1f} (ppm); Improvement = {fac:.1f} %%".format(**dmin)
-        
-        return outstr
 
 def run(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None, 
              debug=False, ap_select_tlimits=None):

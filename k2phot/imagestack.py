@@ -137,7 +137,7 @@ def background_mask(cad,fbg,plot=False):
 
     p0 = np.zeros(4)
     p0[3] = np.median(fbg)
-    p1 = fmin(obj,p0)
+    p1 = fmin(obj,p0,disp=0)
 
     fbgfit = model(p1,dcad)
 
