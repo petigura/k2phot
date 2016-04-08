@@ -44,8 +44,12 @@ def loadPixelFile(fn, tlimits=None, bjd0=2454833, tex=None):
         Value that will be added to the time index. The default
         "Kepler Epoch" is 2454833.
 
+      tex : Times to exclude
+
     :OUTPUTS:
       time, datastack, data_uncertainties, mask [, FITSheaders]
+
+      
     """
     # 2014-08-27 16:23 IJMC: Created
     # 2014-09-08 09:59 IJMC: Updated for K2 C0 data: masks.
@@ -62,7 +66,9 @@ def loadPixelFile(fn, tlimits=None, bjd0=2454833, tex=None):
 
     f = fits.open(fn)
     cube = f[1].data
-    cube = np.array(cube) 
+
+    flux = cube['FLUX'] # (ncad, nx,ny ) array
+    time = cube['TIME']
     ncad = len(cube)
     qdf = parse_bits(cube['QUALITY'])
     sqdf = qdf.sum() # Compute the sum total of quality bits
@@ -76,16 +82,16 @@ def loadPixelFile(fn, tlimits=None, bjd0=2454833, tex=None):
     print "Removing %i cadences due to quality flag" % (ncad - np.sum(bqual)) 
     
     # Because masks are not always rectangles, we have to deal with nans.
-    flux0 = ma.masked_invalid(cube['FLUX'])
+    flux0 = ma.masked_invalid(flux)
     flux0 = flux0.sum(2).sum(1)
     bfinite = np.array(np.isfinite(flux0))
     print "Removing %i cadences due nans" % (ncad - np.sum(bfinite)) 
     
-    btime = (cube['TIME'] > mintime) & (cube['TIME'] < maxtime)
+    btime = (time > mintime) & (time < maxtime)
     if type(tex)!=type(None):
         for rng in tex:
             # Include regions that are outside of time range
-            brng = (cube['TIME'] < rng[0]) | (cube['TIME'] > rng[1])
+            brng = (time < rng[0]) | (time > rng[1])
             btime = btime & brng
 
     print "Removing %i cadences due to time limits" % (ncad - np.sum(btime)) 
@@ -95,8 +101,8 @@ def loadPixelFile(fn, tlimits=None, bjd0=2454833, tex=None):
 
     assert type(b)==type(np.ones(0)),"Boolean mask must be array"
     cube = cube[b]
-    print "tmin = %i, tmax = %i" % tuple(cube['TIME'][[0,-1]])
-    cube['TIME'][:] = cube['TIME'] + bjd0
+    print "tmin = %i, tmax = %i" % tuple(time[[0,-1]])
+    cube['TIME'][:] = cube['TIME'][:] + bjd0
     ret = (cube,) + ([headerToDict(el.header) for el in f],)
 
     f.close()
