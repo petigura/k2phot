@@ -10,7 +10,7 @@ def pipeline(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
     """
 
     pixdcr = pixdecor.PixDecor(
-        pixfn, lcfn,transfn, tlimits=ap_select_tlimits, tex=None
+        pixfn, lcfn,transfn, tlimits=ap_select_tlimits, tex=tex
         )
     pixdcr.set_lc0(3)
 
@@ -20,7 +20,7 @@ def pipeline(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None,
 
         tlimits = [pixdcr.lc0.iloc[i]['t'] - bjd0 for i in idx]
         pixdcr = pixdecor.PixDecor(
-            pixfn, lcfn,transfn, tlimits=tlimits, tex=None
+            pixfn, lcfn,transfn, tlimits=tlimits, tex=tex
         )
         pixdcr.apertures = [3,4]
         pixdcr.set_lc0(3)
