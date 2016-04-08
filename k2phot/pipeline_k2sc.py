@@ -132,7 +132,7 @@ class PipelineK2SC(Pipeline):
 
    
 def run(pixfn, lcfn, transfn, splits, tlimits=[-np.inf,np.inf], tex=None, 
-             debug=False, ap_select_tlimits=None):
+             debug=False, ):
     """
     Run the pixel decorrelation on pixel file
     """
@@ -140,24 +140,31 @@ def run(pixfn, lcfn, transfn, splits, tlimits=[-np.inf,np.inf], tex=None,
     pipe = PipelineK2SC(pixfn,lcfn,transfn,splits,tlimits=tlimits)
     pipe.debug = debug
 
+    # Perform hyper parameter optimization using the best guess aperture
     ap = pipe.get_aperture_guess()
     pipe.k2sc(ap)
 
+    # Photometry with circular apertures
     dfaper_default = pipe.get_dfaper_default()
     dfaper_default = pipe.aperture_scan(dfaper_default)
 
+    # Photometry with region apertures
     dfaper_scan = pipe.get_dfaper_scan()
     dfaper_scan = pipe.aperture_scan(dfaper_scan)
     dfaper_scan = pipe.aperture_polish(dfaper_scan)
 
+    # Find optimal region aperture
     dfaper = dfaper_default + dfaper_scan
     dfaper = pd.DataFrame(dfaper)
-    row = dfaper.loc[dfaper.noise.idxmin()].copy()
+    idx = dfaper[dfaper.fits_group.str.contains('region')].noise.idxmin()
+    row = dfaper.loc[idx].copy()
     row['to_fits'] = True
     row['fits_group'] = 'optimum'
     dfaper = dfaper.append(row, ignore_index=True)
-    pipe.dfaper = dfaper
     print dfaper.sort('npix')['fits_group npix noise to_fits'.split()]
+
+    # Save and make diagnostic plots
+    pipe.dfaper = dfaper
     pipe.to_fits(pipe.lcfn)
     pipe.plot_diagnostics()
 
