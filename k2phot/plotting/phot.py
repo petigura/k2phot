@@ -26,12 +26,17 @@ def medframe(phot):
     plt.title(tit)
 
 def aperture(phot):
-    fig = plt.figure(figsize=(8,4))
-    finderchart.dss(phot, subplot_args=(122,))
-    ax = fig.add_subplot(121)
+    plt.rc('font',size=8)
+    fig = plt.figure(figsize=(11.5,3.5))
+    fig.subplots_adjust(
+        wspace=0.4, top=0.83, bottom=0.12, left=0.06, right=0.95
+         )
+    ax = fig.add_subplot(131)
     plt.sca(ax)
     medframe(phot)
-    fig.set_tight_layout(True)
+    finderchart.dss(phot, survey='poss1_red', subplot_args=(132,))
+    finderchart.dss(phot, survey='poss2ukstu_red', subplot_args=(133,))
+
 
 def background(phot):
     lc = phot.lc

@@ -11,7 +11,13 @@ import numpy as np
 import sys
 import textwrap
 
-def read_fits_dss(phot):
+def read_fits_dss(phot, survey='poss1_red'):
+    survey_to_idx = {
+        'poss1_red':8,
+        'poss2ukstu_red':10
+        }
+        
+
     # Construct IPAC finder chart URL
     header_pri = phot.header
     ra, dec = [header_pri[k] for k in 'RA_OBJ DEC_OBJ'.split()] 
@@ -21,17 +27,19 @@ def read_fits_dss(phot):
     print "Accessing IPAC finderchart XML from"
     print url
     
+
+    
     # Parse XML to get fitsurl
     response = urllib2.urlopen(url)
     tree = etree.parse(response)
     finderchart = tree.getroot()
     finderchart.findall('fitsurl')
 
-    
-    surveyname = finderchart[1][8][0].text
-    band = finderchart[1][8][1].text
-    obsdate = finderchart[1][8][2].text
-    fitsurl = finderchart[1][8][3].text
+    idx = survey_to_idx[survey]
+    surveyname = finderchart[1][idx][0].text
+    band = finderchart[1][idx][1].text
+    obsdate = finderchart[1][idx][2].text
+    fitsurl = finderchart[1][idx][3].text
 
     print "Downloading FITS file from"
     print fitsurl
@@ -54,7 +62,7 @@ def set_frame_size(extent_arcsec, dss, wcs):
     plt.xlim(*xl)
     plt.ylim(*yl)
 
-def dss(phot, subplot_args=()):
+def dss(phot, survey='poss1_red',subplot_args=()):
     """
     Grab DSS finder chart and overplot axis
     """
@@ -66,7 +74,7 @@ def dss(phot, subplot_args=()):
 
     try:
         # Download fitsurl
-        hduL_dss,  surveyname, band, obsdate = read_fits_dss(phot)
+        hduL_dss,  surveyname, band, obsdate = read_fits_dss(phot, survey=survey)
         header_dss = hduL_dss[0].header
         wcs = astropy.wcs.find_all_wcs(header_dss)[0]
         print wcs.pixel_scale_matrix
