@@ -23,6 +23,7 @@ import plotting
 
 npix_scan_fac = 4
 npix_scan_trials = 6
+npix_scan_min = 9 # Minimum number of pixels to consider
 
 class Pipeline(object):
     """Pipeline class
@@ -172,7 +173,8 @@ class Pipeline(object):
         dfaper = dfaper.sort('npix')
         dfaper.index = range(len(dfaper))
 
-        # Check to see if best aperture is bounded on both sides
+        # Check to see if best aperture is bounded on both sides. If
+        # it is, return dfaper and set npix_best2 = npix_best1
         idx_best = dfaper.noise.idxmin()
         npix_best1 = dfaper.ix[idx_best,'npix']
         npix_min = dfaper.npix.min()
@@ -181,8 +183,8 @@ class Pipeline(object):
             npix_best1, npix_min, npix_max)
  
         is_npix_best_bounded = (npix_best1 > npix_min) & (npix_best1 < npix_max)
-        if is_npix_best_bounded is False:
-            return dfaper
+        if not is_npix_best_bounded:
+            return dfaper0, npix_best1, npix_best1
         
         idx_fit = np.arange(3) - 1 + idx_best
         noise_fit = dfaper.ix[idx_fit].noise
@@ -344,10 +346,16 @@ def kepmag_to_npix_scan(kepmag):
     npixfit = kepmag_to_npix(kepmag,plot=False)
     npixfit_min = npixfit / npix_scan_fac
     npixfit_max = npixfit * npix_scan_fac
+    
+    if npixfit_min < npix_scan_min:
+        npixfit_min = npix_scan_min 
+        npixfit_max = npix_scan_min * npix_scan_fac
+
     npix = np.logspace( 
         np.log10(npixfit_min), np.log10(npixfit_max), npix_scan_trials
         ) 
     npix = np.round(npix).astype(int)
+    npix = np.unique(npix)
     return npix
 
 def kepmag_to_npix(kepmag,plot=False):
