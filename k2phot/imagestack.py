@@ -75,8 +75,12 @@ class ImageStack(object):
         #Checks if every single cadence is a nan. If yes don't include at all
         is_all_nan = flux.mask.sum(1)==flux.mask.shape[1]
         bgmask = bgmask | is_all_nan
-
         self.bgmask = bgmask
+
+        if ap_mask.sum() > 0.8 * flux.shape[1]:
+            self.bgmask = np.zeros(flux.shape[0]).astype(bool)            
+            self.fbg = np.zeros(flux.shape[0])
+
         self.ts['fbg'] = self.fbg
         self.ts['bgmask'] = self.bgmask
 

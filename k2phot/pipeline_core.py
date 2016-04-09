@@ -104,19 +104,9 @@ class Pipeline(object):
         self.im.set_fbackground()
 
         lc = self.im.ts 
-        trans,pnts = read_channel_transform(self.transfn)
+        trans, pnts = read_channel_transform(self.transfn)
         trans['roll'] = trans['theta'] * 2e5
-        # Hack select a representative star to use for x-y position 
-        sqdist = (
-            (np.median(pnts['x'],axis=1) - 500)**2 +
-            (np.median(pnts['y'],axis=1) - 500)**2 
-            )
-        pnts500 = pnts[np.argmin(sqdist)]
-        pnts = pd.DataFrame(pnts[0]['cad'.split()])
-        pnts['xpr'] = pnts500['xpr']
-        pnts['ypr'] = pnts500['ypr']
 
-        trans = pd.concat([trans,pnts],axis=1)
         lc['fsap'] = self.im.get_sap_flux()
         norm = Normalizer(lc['fsap'].median())
         lc['f'] = norm.norm(lc['fsap'])
