@@ -77,7 +77,7 @@ class Pipeline(object):
         # As the reference image to construct apertures, use the 90th
         # percentile flux value. When the bleed columns move around,
         # we want to capture all the photometry.
-        ap_im = self.im.get_percentile_frame(99.9)
+        ap_im = self.im.get_percentile_frame(99.0)
         ap_im.fill_value = 0
         ap_im = ap_im.filled()
         self.ap_im = ap_im
