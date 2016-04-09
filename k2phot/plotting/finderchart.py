@@ -65,7 +65,7 @@ def dss(phot, survey='poss1_red',subplot_args=()):
 
 
         # Compute verticies of the medframe image used to set limits
-        nx, ny = phot.medframe.shape
+        ny, nx = phot.medframe.shape # row is y, col is x
         wcs_medframe = astropy.wcs.find_all_wcs(
             phot.header_medframe, keysel=['binary']
         )
