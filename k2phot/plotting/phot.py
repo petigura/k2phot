@@ -8,9 +8,7 @@ from ..lightcurve import Lightcurve, Normalizer
 import finderchart
 
 def medframe(phot):
-    """
-    Plot median frame with aperture drawn 
-    """
+    """Plot median frame with aperture drawn"""
     medframe = phot.medframe
     medframe -= np.median(phot.lc['fbg'])
     imshow(phot.medframe)
@@ -26,6 +24,7 @@ def medframe(phot):
     plt.title(tit)
 
 def aperture(phot):
+    """Plot K2 aperture on Kepler pixels and DSS"""
     plt.rc('font',size=8)
     fig = plt.figure(figsize=(11.5,3.5))
     fig.subplots_adjust(
@@ -37,6 +36,37 @@ def aperture(phot):
     finderchart.dss(phot, survey='poss1_red', subplot_args=(132,))
     finderchart.dss(phot, survey='poss2ukstu_red', subplot_args=(133,))
 
+from ..lightcurve import Lightcurve
+def flux_position_scatter(lc0,thruster=False):
+    """Plot K2 aperture on Kepler pixels and DSS"""
+    lc = lc0.copy()
+    plt.rc('font',size=8)
+    fig,axL = plt.subplots(nrows=1,ncols=2,figsize=(15,6),sharex=True,sharey=True)
+    lc = Lightcurve(lc)
+    cols = ['fsap','fdt_t_roll_2D']
+    vals =  [lc.get_col(col,norm=True,maskcol='fmask') for col in cols]
+    for i in range(2):
+        col = cols[i]
+        fm = vals[i]
+        plt.sca(axL[i])
+        lim = roblims(fm, 5, 2)
+
+        lcmask = lc[lc.thrustermask]
+        if thruster:
+            plt.plot(lcmask.xpr,lcmask.ypr,'x',color='w',mew=3,ms=8)
+            plt.plot(lcmask.xpr,lcmask.ypr,'x',color='m',mew=1)
+
+        plt.scatter(
+            lc.xpr, lc.ypr,c=fm, vmin=lim[0], vmax=lim[1],cmap=plt.cm.coolwarm
+        )
+        c = plt.colorbar()
+        plt.title(col)
+    fig.subplots_adjust(left=0.07,right=0.99, hspace=0.08)
+    
+    xl = roblims(lc.xpr, 10, 1.5)
+    yl = roblims(lc.ypr, 10, 1.5)
+    plt.xlim(*xl)
+    plt.ylim(*yl)
 
 def background(phot):
     lc = phot.lc
@@ -184,8 +214,8 @@ def roblims(x,p,fac):
     p : percentile (compared to 50) to use as lower limit
     fac : add some space
     """
-    ps = np.percentile(x,[p,50,100-p])
-    lim = ps[0] - (ps[1]-ps[0]) * fac,ps[2]+(ps[2]-ps[1]) * fac
+    plo,pmed,phi = np.percentile(x,[p,50,100-p])
+    lim = plo - (pmed-plo) * fac, phi + (phi-pmed) * fac
     return lim
 
 def lightcurve_masks(lc):
