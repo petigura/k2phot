@@ -19,7 +19,7 @@ if __name__=='__main__':
     p = ArgumentParser(
         description='Parse K2 catalog and dump into sqlite3 and h5 databases'
         )
-    p.add_argument('k2_camp',type=str,help='K2 Campaign. e.g. C1')
+    p.add_argument('k2_camp',type=str,help='K2 Campaign. e.g. C1 or all')
     args = p.parse_args()
     k2_camp = args.k2_camp
     make_k2_catalog(k2_camp)

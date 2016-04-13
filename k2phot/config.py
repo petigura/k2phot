@@ -11,7 +11,7 @@ for var in required_environment_variables:
     exec('%s = os.environ["%s"]' % (var,var) )
 
 noisekey = 'fdt_t_roll_2D' # Column to use to compute noise
-noisename = 'mad_6_cad_mtd' # Noise metric to use for optimal aperture
+noisename = 'rms_6_cad_mtd' # Noise metric to use for optimal aperture
 
 timelabel = 'BJD - %i' % bjd0
 rbg  = 2 #radius of region to exclude from background calculation

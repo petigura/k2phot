@@ -196,6 +196,7 @@ def read_cat(k2_camp, **kwargs):
     if k2_camp=='all':
         with h5py.File(k2cat_h5file,'r') as h5:
             k2_campaigns = h5.keys()
+            k2_campaigns = [s for s in k2_campaigns if s[0]=='C']
         cat = map(reader, k2_campaigns)
         cat = pd.concat(cat)
     else:
@@ -273,7 +274,13 @@ def make_k2_catalog(k2_camp):
     ----------
     k2_camp : K2 Campaign 
     """
-    df = read_mast_cat(k2_camp)
+
+    if k2_camp=='all':
+        df = read_cat(k2_camp)
+        k2_camp = 'STAR'
+    else:
+        df = read_mast_cat(k2_camp)
+
     print "Dumping whole catalog to %s, %s" % (k2cat_h5file,k2_camp)
     print df.info()
     df.to_hdf(k2cat_h5file,k2_camp)
