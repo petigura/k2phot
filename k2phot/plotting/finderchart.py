@@ -12,12 +12,6 @@ import sys
 import textwrap
 
 def read_fits_dss(phot, survey='poss1_red'):
-    survey_to_idx = {
-        'poss1_red':8,
-        'poss2ukstu_red':10
-        }
-        
-
     # Construct IPAC finder chart URL
     header_pri = phot.header
     ra, dec = [header_pri[k] for k in 'RA_OBJ DEC_OBJ'.split()] 
@@ -30,14 +24,16 @@ def read_fits_dss(phot, survey='poss1_red'):
     # Parse XML to get fitsurl
     response = urllib2.urlopen(url)
     tree = etree.parse(response)
-    finderchart = tree.getroot()
-    finderchart.findall('fitsurl')
 
-    idx = survey_to_idx[survey]
-    surveyname = finderchart[1][idx][0].text
-    band = finderchart[1][idx][1].text
-    obsdate = finderchart[1][idx][2].text
-    fitsurl = finderchart[1][idx][3].text
+    image = None
+    for _image in tree.iterfind('.//image'):
+        if _image.find('band').text==survey:
+            image = _image
+
+    surveyname  = image.find('surveyname').text
+    band = image.find('band').text
+    obsdate = image.find('obsdate').text
+    fitsurl = image.find('fitsurl').text
 
     print "Downloading FITS file from"
     print fitsurl
