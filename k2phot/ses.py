@@ -112,8 +112,8 @@ def ses_stats(fm):
         fom = ma_mad(mtd(fm,twd))
         dfses.append(['mad_%i_cad_mtd' % twd, fom, twd])
         
-    fom = ma_point_to_point(fm)
-    dfses.append(['p2p', fom, 1 ]  )
+#    fom = ma_point_to_point(fm)
+#    dfses.append(['p2p', fom, 1 ]  )
 
     dfses = pd.DataFrame(dfses,columns='name value twd'.split())
     dfses['value']*=1e6
