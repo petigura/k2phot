@@ -4,6 +4,8 @@ import pandas as pd
 import numpy as np
 from pdplus import LittleEndian
 import os.path
+from astropy.io.fits import conf
+conf.use_memmap=False
 
 _COLDEFS_LC_SHARED = [
     ["thrustermask","L","Thruster fire","bool"],
@@ -98,6 +100,8 @@ class Photometry(object):
         """
         Package up photometry object as a fits file
         """
+
+        print "conf.use_memmap={}".format(conf.use_memmap)
         # Construct primary header
         hduL_pixel = fits.open(self.pixfn)
         hdu_primary = hduL_pixel[0]
