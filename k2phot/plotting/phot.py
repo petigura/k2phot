@@ -33,10 +33,9 @@ def aperture(phot):
     ax = fig.add_subplot(131)
     plt.sca(ax)
     medframe(phot)
-    finderchart.dss(phot, survey='poss1_red', subplot_args=(132,))
-    finderchart.dss(phot, survey='poss2ukstu_red', subplot_args=(133,))
+    finderchart.dss(phot, survey='DSS1 Red', subplot_args=(132,))
+    finderchart.dss(phot, survey='DSS2 Red', subplot_args=(133,))
 
-from ..lightcurve import Lightcurve
 def flux_position_scatter(lc0,thruster=False):
     """Plot K2 aperture on Kepler pixels and DSS"""
     lc = lc0.copy()
@@ -229,4 +228,67 @@ def lightcurve_masks(lc):
         trans = btf(ax.transData,ax.transAxes)
         color = colors[i]
         plt.plot(x,y,'|',ms=4,mew=2,transform=trans,color=color,label=k)
+
+
+def lightcurve_segments(lc0):
+    nseg = 8
+    nrows = 4
+    fig = plt.figure(figsize=(18,10))
+    gs = GridSpec(nrows,nseg)
+    lc_segments = np.array_split(lc0,nseg)
+    plt.rc('lines',markersize=6,markeredgewidth=0)
+    def plot(*args,**kwargs):
+        plt.plot(*args,alpha=0.5,**kwargs)
+
+    for i in range(nseg):
+        if i==0:
+            ax0L = [fig.add_subplot(gs[j,0]) for j in range(nrows)]
+            axiL = ax0L
+        else:
+            axiL = [
+                fig.add_subplot(gs[0,i],sharey=ax0L[0]),
+                fig.add_subplot(gs[1,i],sharey=ax0L[1]),
+                fig.add_subplot(gs[2,i],sharey=ax0L[2]),
+                fig.add_subplot(gs[3,i],sharex=ax0L[3],sharey=ax0L[3]),
+            ]
+
+            for ax in axiL:
+                plt.setp(
+                    ax.yaxis,
+                    visible=False,
+                    major_locator=MaxNLocator(3)
+                )
+                plt.setp(
+                    ax.xaxis,
+                    visible=False,
+                    major_locator=MaxNLocator(3)
+                )
+
+        lc = lc_segments[i]
+        lc = Lightcurve(lc)
+        fm = lc.get_fm('fsap')
+        ftnd = lc.get_fm('ftnd_t_roll_2D')
+        
+        plt.sca(axiL[0])
+        plot(lc['t'],lc['roll'],label='x: t, y: roll')
+
+        plt.sca(axiL[1])
+        plot(lc['roll'],fm,'.',label='x: roll, y: flux')
+        plot(lc['roll'],ftnd,'.',label='x: roll, y: flux model')
+
+        plt.sca(axiL[2])
+        plot(lc['t'],lc['roll'],label='x: t, y: roll')
+
+        plt.sca(axiL[3])
+        
+        xpr = lc.get_fm('xpr')
+        ypr = lc.get_fm('ypr')
+        plot(xpr,ypr,'.',label='x: xpr, y: yrp')
+
+    for i in range(nrows):
+        plt.sca(ax0L[i])
+        plt.legend(fontsize='x-small')
+    fig.subplots_adjust(
+        left=0.05, right=0.99, top=0.99, bottom=0.05, hspace=0.001, wspace=0.001
+    )
 
