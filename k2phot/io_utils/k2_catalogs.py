@@ -56,13 +56,13 @@ def read_target_list(k2_camp):
     targetsfn = 'K2Campaign%itargets.csv' % int(k2_camp[1:])
     targetsfn = os.path.join(TARGET_LISTS,targetsfn)
 
-    if re.compile('C0|C1|C3|C4|C5|C6|C7').match(k2_camp):
+    if re.compile('C0|C1|C3|C4|C5|C6|C7|C8|C9|C10|C11|C12|C13').match(k2_camp):
         targets = pd.read_csv(targetsfn,usecols=[0])
         targets = targets.rename(columns={'EPIC ID':'epic'})
     elif re.compile('C2').match(k2_camp):
         targets = pd.read_csv(targetsfn,usecols=[0],names=['epic'])
     else:
-        assert False,"read_target_list: include k2_campagin"
+        assert False,"read_target_list: include k2_campaign"
 
 
     return targets
@@ -78,7 +78,11 @@ C5 README_d14184_01_epic_c245_dmc d14184_01_epic_c245_dmc.mrg.gz
 C6 README_d14260_01_epic_c6_dmc d14260_01_epic_c6_dmc.mrg.gz
 C7 README_d14260_03_epic_c7_dmc d14260_03_epic_c7_dmc.mrg.gz
 C8 README_d15042_02_epic_c8_dmc d15042_02_epic_c8_dmc.mrg.gz
+C9 README_d15042_04_epic_c9_dmc d15042_04_epic_c9_dmc.mrg.gz
 C10 README_d15076_02_epic_c10_dmc d15076_02_epic_c10_dmc.mrg.gz
+C11 README_d15332_01_epic_c11_dmc d15332_01_epic_c11_dmc.mrg.gz
+C12 README_d15332_02_epic_c12_dmc d15332_02_epic_c12_dmc.mrg.gz
+C13 README_d15332_03_epic_c13_dmc d15332_03_epic_c13_dmc.mrg.gz
 """
 filenames = pd.read_table(sio(s),sep='\s',index_col=0, engine='python')
 
@@ -119,6 +123,12 @@ def query_epic(k2_camp,epic):
     return df
 
 def read_epic(k2_camp,debug=False):
+    hdfpath = os.path.join(MAST_CATALOGS,k2_camp+'.hdf')
+    if os.path.exists(hdfpath):
+        cat = pd.read_hdf(hdfpath,k2_camp)
+        return cat
+
+    print "creating {}".format(hdfpath)
     reader = Reader(k2_camp)
     
     # List of columns to include
@@ -146,8 +156,31 @@ def read_epic(k2_camp,debug=False):
         reader.catalogfn, sep='|', names=cut.newname, header=None, 
         usecols=usecols, compression='gzip', nrows=nrows
         )
+    if debug:
+        return cat
 
+    cat.to_hdf(hdfpath,k2_camp,complevel=1,complib='blosc')
     return cat
+
+def read_epic_composite(k2_camp):
+    k2_camp_int = int(k2_camp[1:])
+    if k2_camp_int < 11:
+        return read_epic(k2_camp)
+    if k2_camp=='C11':
+        catalogs = 'C2 C9 C11'.split()
+    if k2_camp=='C12':
+        catalogs = 'C3 C12'.split()
+    if k2_camp=='C13':
+        catalogs='C4 C13'.split()
+
+    cat = []
+    for catalog in catalogs:
+
+        print "reading catalog {}".format(catalog)
+        cat+=[read_epic(catalog)]
+    cat = pd.concat(cat)
+    return cat
+        
 
 def read_cat(k2_camp, **kwargs):
     """
@@ -163,6 +196,7 @@ def read_cat(k2_camp, **kwargs):
     if k2_camp=='all':
         with h5py.File(k2cat_h5file,'r') as h5:
             k2_campaigns = h5.keys()
+            k2_campaigns = [s for s in k2_campaigns if s[0]=='C']
         cat = map(reader, k2_campaigns)
         cat = pd.concat(cat)
     else:
@@ -240,7 +274,13 @@ def make_k2_catalog(k2_camp):
     ----------
     k2_camp : K2 Campaign 
     """
-    df = read_mast_cat(k2_camp)
+
+    if k2_camp=='all':
+        df = read_cat(k2_camp)
+        k2_camp = 'STAR'
+    else:
+        df = read_mast_cat(k2_camp)
+
     print "Dumping whole catalog to %s, %s" % (k2cat_h5file,k2_camp)
     print df.info()
     df.to_hdf(k2cat_h5file,k2_camp)

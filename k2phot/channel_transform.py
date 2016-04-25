@@ -210,43 +210,32 @@ def get_thrustermask(dtheta):
     return thrustermask
 
 def get_thrustermask_pos(trans):
-    """
-    Identify thruster fire events.
+    """Identify thruster fire events.
 
-    Delta theta is the change in telescope roll angle compared to the
-    previous cadence. We establish the typical scatter in delta theta
-    by computing the median absolute deviation of points in regions of
-    100 measurements. We identfy thruster fires as cadences where the
-    change in telescope roll angle exceeds the median absolute
-    deviation by > 15.
+    Compute change in position (pixels) compared to the previous
+    cadence. Filter out values where the change is larger than a
+    certain percentile. Thruster fires occur every 6 hours or so the
+    throwing out 0.08% of the data gets the thruster events.
 
-    Parameters 
+    Parameters
     ----------
-    dtheta : roll angle for contiguous observations
+    trans : transformation object 
 
     Returns
     -------
     thrustermask : boolean array where True means thruster fire
+
     """
-    medfiltwid = 100 # Filter width to identify discontinuities in theta
-    sigfiltwid = 100 # Filter width to establish local scatter in dtheta
-    thresh = 10 # Threshold to call something a thruster fire (units of sigma)
+    medfiltwid = 10 
+    thruster_quantile = 92
 
     xpr = np.array(trans.xpr)    
     ypr = np.array(trans.ypr)
     dpix = np.sqrt((xpr[1:] - xpr[:-1])**2 + (ypr[1:] - ypr[:-1])**2)
     dpix = np.hstack([[0],dpix])
     dpixfilt = dpix - nd.median_filter(dpix,medfiltwid)
-    thrustermask = dpixfilt > np.percentile(dpixfilt,85)
+    thrustermask = dpixfilt > np.percentile(dpixfilt,thruster_quantile)
     return thrustermask
-
-#    idx = np.where(thrustermask)[0]
-#    mask_after = idx + 1 # mask cadence after
-#    mask_after = mask_after[mask_after < len(thrustermask)]
-#    print "{} masked after thruster fire ".format(len(mask_after))
-#    thrustermask[mask_after] = True
-
-
 
 def trans_add_columns(trans):
     """

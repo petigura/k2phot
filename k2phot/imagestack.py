@@ -11,7 +11,7 @@ from io_utils.pixel import loadPixelFile, get_wcs
 from circular_photometry import circular_photometry_weights
 
 class ImageStack(object):
-    def __init__(self,pixfile,tlimits=[-np.inf,np.inf],tex=None):
+    def __init__(self, pixfile, tlimits=[-np.inf,np.inf],tex=None):
         """
         Initialize ImageStack Object
         
@@ -37,6 +37,7 @@ class ImageStack(object):
         ts = dict(ts)
         self.ts = pd.DataFrame(ts)
         self.tlimits = tlimits
+        self.ap = None
 
     def get_xy_from_header(self):
         """
@@ -50,40 +51,22 @@ class ImageStack(object):
         y = float(y)
         return x,y
 
-    def set_apertures(self,locx,locy,radius):
+    def set_fbackground(self):
         """
-        Set the apertures used to compute photometry
+        Set flux in background
+
+        Uses the current value of self.ap (which must be set) and
+        constructs the median flux outside.
         """
-        if hasattr(locx,'__iter__'):
-            assert ((len(locx)==self.nframe) &
-                    (len(locy)==self.nframe) ), "Must have same length as array"
-
-        self.radius = radius
-        self.locx = locx
-        self.locy = locy
-        self.ts['locx'] = locx
-        self.ts['locy'] = locy
-        self.ap_weights = self.get_ap_weights(radius)
-
-    def get_ap_weights(self,radius):
-        ap_weights = np.zeros(self.flux.shape)
-        positions = np.array([[self.locx,self.locy]])
-        for i in range(self.nframe):
-            ap_weights[i] = circular_photometry_weights(
-                self.flux[0],positions,radius
-            )
-        return ap_weights
-        
-    def set_fbackground(self,radius):
         if 0:
             from matplotlib.pylab import *
             ion()
             import pdb;pdb.set_trace()
 
-        ap_weights = self.get_ap_weights(radius)
         flux = ma.masked_array(self.flux,fill_value=0)
-        flux.mask = False
-        flux.mask[ap_weights > 0] = True # If included in aperture, mask out
+        ap_mask = self.ap.weights > 0
+        ap_mask = ap_mask[np.newaxis,:,:]
+        flux.mask = flux.mask | ap_mask # Mask out if included in aperture
         flux.mask = flux.mask | np.isnan(flux.data)
         flux = flux.reshape(-1,self.npix)
         self.fbg = np.array(ma.median(flux,axis=1))
@@ -92,8 +75,12 @@ class ImageStack(object):
         #Checks if every single cadence is a nan. If yes don't include at all
         is_all_nan = flux.mask.sum(1)==flux.mask.shape[1]
         bgmask = bgmask | is_all_nan
-
         self.bgmask = bgmask
+
+        if ap_mask.sum() > 0.8 * flux.shape[1]:
+            self.bgmask = np.zeros(flux.shape[0]).astype(bool)            
+            self.fbg = np.zeros(flux.shape[0])
+
         self.ts['fbg'] = self.fbg
         self.ts['bgmask'] = self.bgmask
 
@@ -101,66 +88,24 @@ class ImageStack(object):
         """
         Get aperture photometry. Subtract background
         """
-
         flux = self.flux.copy()
         flux -= self.fbg[:,np.newaxis,np.newaxis]  
-        ap_flux = flux * self.ap_weights # flux falling in aperture
+        ap_flux = flux * self.ap.weights # flux falling in aperture
         ap_flux = ap_flux.reshape(self.nframe,-1)
         ap_flux = np.nansum(ap_flux,axis=1)
         return ap_flux
 
-    def get_flux(self):
-        """Get flux cube
-        
-        For Imstack object we don't modify the flux cube, so this is a
-        no-op. For derived classes, we do and get_flux protechts
-        self.flux
-        """
-        return self.flux
-
-    def get_frame(self,i):
-        flux = self.get_flux()
-
-        locx = None
-        locy = None
-        ap_weights = None
-        radius = None
-        try:
-            locx,locy = self.ts.iloc[i]['locx locy'.split()]
-        except:
-            print "locx,locy not set"
-
-        try:
-            ap_weights = self.ap_weights[i]
-        except:
-            print "ap_weights not set"
-
-        frame = Frame(
-            flux[i],locx=locx,locy=locy,r=self.radius,ap_weights=ap_weights)
-        return frame
-
     def get_medframe(self):
-        locx,locy =tuple(self.ts['locx locy'.split()].median())
-        flux = self.get_flux()
+        flux = self.flux
         flux = ma.masked_invalid(flux)
         flux = ma.median(flux,axis=0)
-        frame = Frame(
-            flux,locx=locx,locy=locy,r=self.radius)
-        return frame
-
-    def get_frames(self):
-        flux = self.get_flux()
-        def get_frame(i):
-            ap_weights = self.ap_weights[i]
-            tsi = self.ts.iloc[i]
-
-            frame = Frame(
-                flux[i], locx=tsi['locx'], locy=tsi['locy'], r=self.radius,
-                ap_weights=ap_weights)
-            return frame
-
-        frames = map(get_frame,range(self.nframe))
-        return frames
+        return flux
+    
+    def get_percentile_frame(self,p):
+        flux = np.nanpercentile(self.flux, p, 0)
+        flux = ma.masked_invalid(flux)
+        return flux
+        
 
 def background_mask(cad,fbg,plot=False):
     """Background Mask
@@ -201,7 +146,7 @@ def background_mask(cad,fbg,plot=False):
 
     p0 = np.zeros(4)
     p0[3] = np.median(fbg)
-    p1 = fmin(obj,p0)
+    p1 = fmin(obj,p0,disp=0)
 
     fbgfit = model(p1,dcad)
 
