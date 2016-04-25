@@ -55,8 +55,12 @@ def channel_transform(fitsfiles, h5file, iref= None):
         cent[i] = fits_to_chip_centroid(fitsfile)
         channel_i = get_channel(fitsfile)
         assert channel==channel_i,"%i != %i" % (channel, channel_i)
-        
+
     trans,pnts = imtran.linear_transform(cent['centx'],cent['centy'],iref)
+    trans = pd.DataFrame(trans)
+    trans = pd.concat([trans,pd.DataFrame(LE(cent0))[['t','cad']]],axis=1)
+    trans = trans.to_records(index=False)
+
     keys = cent.dtype.names
     pnts = mlab.rec_append_fields(pnts,keys,[cent[k] for k in keys])
 
@@ -311,9 +315,9 @@ def plot_trans(trans,pnts):
     """
     Diagnostic plot that shows different transformation parameters
     """
-    t = pnts[0]['t']
     keys = 'scale theta skew1 skew2'.split()
     nrows = 5
+    t = trans['t']
     fig,axL = plt.subplots(nrows=nrows,figsize=(20,8),sharex=True)
     fig.set_tight_layout(True)
     for i,key in enumerate(keys):
