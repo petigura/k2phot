@@ -7,7 +7,6 @@ import copy
 import numpy as np
 import pandas as pd
 from astropy.io import fits
-import pyfits as pf
 
 import k2sc.k2sc
 import k2sc.k2data
@@ -87,7 +86,8 @@ class PipelineK2SC(Pipeline):
         errors = fluxes * (60 * 30 * self.lc0['fsap'].median() )**-0.5
         pos = self.lc0['xpr ypr'.split()]
         pos -= pos.mean()
-        head = pf.getheader(self.pixfn, 0)
+        
+        head = fits.open(self.pixfn)[0].header
         epic = head['KEPLERID']
         x = pos['xpr']
         y = pos['ypr']
