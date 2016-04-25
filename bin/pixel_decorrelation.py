@@ -27,7 +27,15 @@ if __name__ == "__main__":
         '--tex', type=str, default=None,help='Exclude time range'
     )
 
+    p.add_argument(
+        '--singleapsize', type=float, default=None,help='Just use a single aperture size'
+    )
+
     args  = p.parse_args()
+    singleapsize = args.singleapsize
+    if singleapsize=='':
+        singleapsize=None
+
     tex = args.tex
     if tex=='':
         tex=None
@@ -38,6 +46,20 @@ if __name__ == "__main__":
     ap_select_tlimits = [args.atmin,args.atmax]
     pipeline.pipeline(
         args.pixfile, args.lcfile, args.transfile, debug=args.debug,
-        tlimits=tlimits, tex=tex, ap_select_tlimits = ap_select_tlimits
-        )
+        tlimits=tlimits, tex=tex, ap_select_tlimits = ap_select_tlimits,
+        singleapsize=singleapsize)
 
+#    args  = p.parse_args()
+#    tex = args.tex
+#    if tex=='':
+#        tex=None
+#    elif type(args.tex)!=type(None):
+#        tex = eval("np.array(%s)" % tex)
+#
+#    tlimits = [args.tmin,args.tmax]
+#    ap_select_tlimits = [args.atmin,args.atmax]
+#    pipeline.pipeline(
+#        args.pixfile, args.lcfile, args.transfile, debug=args.debug,
+#        tlimits=tlimits, tex=tex, ap_select_tlimits = ap_select_tlimits
+#        )
+####

@@ -4,13 +4,14 @@ import numpy as np
 from config import bjd0
 
 def pipeline(pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], tex=None, 
-             debug=False, ap_select_tlimits=None):
+             debug=False, ap_select_tlimits=None, singleapsize=None):
     """
     Run the pixel decorrelation on pixel file
     """
 
     pixdcr = pixdecor.PixDecor(
-        pixfn, lcfn,transfn, tlimits=ap_select_tlimits, tex=tex
+        pixfn, lcfn,transfn, tlimits=ap_select_tlimits, tex=tex,
+        singleapsize=singleapsize 
         )
     pixdcr.set_lc0(3)
 

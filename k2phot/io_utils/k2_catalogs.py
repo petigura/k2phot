@@ -56,7 +56,7 @@ def read_target_list(k2_camp):
     targetsfn = 'K2Campaign%itargets.csv' % int(k2_camp[1:])
     targetsfn = os.path.join(TARGET_LISTS,targetsfn)
 
-    if re.compile('C0|C1|C3|C4|C5|C6').match(k2_camp):
+    if re.compile('C0|C1|C3|C4|C5|C6|C7').match(k2_camp):
         targets = pd.read_csv(targetsfn,usecols=[0])
         targets = targets.rename(columns={'EPIC ID':'epic'})
     elif re.compile('C2').match(k2_camp):
