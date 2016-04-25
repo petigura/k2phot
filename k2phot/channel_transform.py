@@ -297,7 +297,10 @@ def read_channel_transform(h5file):
     pnts = pd.DataFrame(pnts[0]['cad'.split()])
     pnts['xpr'] = pnts500['xpr']
     pnts['ypr'] = pnts500['ypr']
+
     trans = pd.DataFrame(trans)
+    if list(trans.columns).count('cad')==1:
+        pnts = pnts.drop(['cad'],axis=1)
 
     trans = pd.concat([trans,pnts],axis=1)
     trans = trans_add_columns(trans)

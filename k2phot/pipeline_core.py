@@ -113,6 +113,10 @@ class Pipeline(object):
         lc['fsap'] = self.im.get_sap_flux()
         norm = Normalizer(lc['fsap'].median())
         lc['f'] = norm.norm(lc['fsap'])
+
+        # t is defined in trans file and we don't want duplicates
+        if list(trans.columns).count('t')>0:
+            trans = trans.drop(['t'],axis=1)
         lc = pd.merge(trans,lc,on='cad')
         lc['fmask'] = lc['f'].isnull() | lc['thrustermask'] | lc['bgmask']
         lc['fdtmask'] = lc['fmask'].copy()
