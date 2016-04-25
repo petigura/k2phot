@@ -32,9 +32,10 @@ class PipelineK2SC(Pipeline):
     :type tranfn: str
     """
     def __init__(self, pixfn, lcfn, transfn, splits, tlimits=[-np.inf,np.inf], 
-                 tex=None):
+                 tex=None, plot_backend='.png'):
         super(PipelineK2SC,self).__init__(
-            pixfn, lcfn, transfn, tlimits=tlimits,tex=tex
+            pixfn, lcfn, transfn, tlimits=tlimits,tex=tex, 
+            plot_backend=plot_backend,
             )
 
         self.splits = splits
@@ -132,12 +133,14 @@ class PipelineK2SC(Pipeline):
 
    
 def run(pixfn, lcfn, transfn, splits, tlimits=[-np.inf,np.inf], tex=None, 
-             debug=False, ):
+             debug=False,plot_backend='.png'):
     """
     Run the pixel decorrelation on pixel file
     """
 
-    pipe = PipelineK2SC(pixfn,lcfn,transfn,splits,tlimits=tlimits)
+    pipe = PipelineK2SC(
+        pixfn,lcfn,transfn,splits,tlimits=tlimits, plot_backend=plot_backend
+        )
     pipe.debug = debug
 
     # Perform hyper parameter optimization using the best guess aperture

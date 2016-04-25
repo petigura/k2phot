@@ -52,11 +52,13 @@ class Pipeline(object):
     DEFAULT_AP_RADII = [1.5, 3, 8] 
 
     def __init__(self, pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], 
-                 tex=None):
+                 tex=None, plot_backend='.png'):
         hduL = fits.open(pixfn)
         self.pixfn = pixfn
         self.lcfn = lcfn
         self.transfn = transfn
+        self.plot_backend = plot_backend
+
         self.kepmag = hduL[0].header['KEPMAG']
         self.basename = os.path.splitext(lcfn)[0]
         self.starname = os.path.basename(self.basename)
@@ -304,7 +306,7 @@ class Pipeline(object):
         """
         plt.figure() # Executes before code block
         yield # Now run the code block
-        figpath = self.basename+suffix
+        figpath = self.basename+suffix+self.plot_backend
         plt.savefig(figpath,dpi=160)
         plt.close('all')
         print "created %s " % figpath
@@ -317,22 +319,22 @@ class Pipeline(object):
             import pdb;pdb.set_trace()
 
         _phot = phot.read_fits(self.lcfn,'optimum')
-        with self.FigureManager('_0-aperture.png'):
+        with self.FigureManager('_0-aperture'):
             plotting.phot.aperture(_phot)
 
-        with self.FigureManager('_1-background.png'):
+        with self.FigureManager('_1-background'):
             plotting.phot.background(_phot)
 
-        with self.FigureManager('_2-noise_vs_aperture_size.png'):
+        with self.FigureManager('_2-noise_vs_aperture_size'):
             plotting.pipeline.noise_vs_aperture_size(self)
 
-        with self.FigureManager("_3-fdt_t_roll_2D.png"):
+        with self.FigureManager("_3-fdt_t_roll_2D"):
             plotting.phot.detrend_t_roll_2D(_phot)
 
-        with self.FigureManager("_4-fdt_t_roll_2D_zoom.png"):
+        with self.FigureManager("_4-fdt_t_roll_2D_zoom"):
             plotting.phot.detrend_t_roll_2D(_phot,zoom=True)
 
-        with self.FigureManager("_5-fdt_t_rollmed.png"):
+        with self.FigureManager("_5-fdt_t_rollmed"):
             plotting.phot.detrend_t_rollmed(_phot)
     
     def to_fits(self, lcfn):
@@ -343,6 +345,8 @@ class Pipeline(object):
             row.phot.to_fits(lcfn,row.fits_group)
 
 def kepmag_to_npix_scan(kepmag):
+    # return [4] # hack to return aperture of a given size.
+    
     npixfit = kepmag_to_npix(kepmag,plot=False)
     npixfit_min = npixfit / npix_scan_fac
     npixfit_max = npixfit * npix_scan_fac
