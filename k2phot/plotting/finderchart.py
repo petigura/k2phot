@@ -37,7 +37,7 @@ def read_fits_dss(phot, survey='poss1_red'):
 
     print "Downloading FITS file from"
     print fitsurl
-    hduL = fits.open(fitsurl, chache=True)
+    hduL = fits.open(fitsurl, chache=False)
     return hduL, surveyname, band, obsdate
 
 def dss(phot, survey='poss1_red',subplot_args=()):
