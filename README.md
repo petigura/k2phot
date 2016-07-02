@@ -2,7 +2,7 @@
 
 Routines for extracting lightcurves from K2 images
 
-Current Version: v0.5
+Current Version: v1.0
 
 ## Dependencies ##
 
@@ -22,13 +22,13 @@ Tested with Python v2.7.3, 2.7.6, 2.7.8
 - george (requires eigen) complicated install, consult evernote
 ```
 
-### Private Python modules ###
+### Private Python modules 
 
-## Installation Instructions ##
+## Installation Instructions
 
-## Tests ##
+## Tests
 
-# scrape_fits_headers #
+# scrape_fits_headers
 
 A small test to verify that the `scrape_fits_headers` code is working
 
@@ -36,7 +36,7 @@ DBFILE=${K2PHOTFILES}/test_C1_headers.db
 scrape_fits_headers ktwo201222515-c01_lpd-targ.fits ktwo201223635-c01_lpd-targ.fits ktwo201226808-c01_lpd-targ.fits ktwo201227422-c01_lpd-targ.fits ktwo201228585-c01_lpd-targ.fits ktwo201230523-c01_lpd-targ.fits ktwo201233437-c01_lpd-targ.fits ktwo201233864-c01_lpd-targ.fits ktwo201234630-c01_lpd-targ.fits ktwo201234711-c01_lpd-targ.fits ktwo201235266-c01_lpd-targ.fits $DBFILE
 sqlite3 $DBFILE "select * from headers"
 
-# test_channel_transform # 
+# test_channel_transform
 
  python -c "from k2phot.tests.test_channel_transform import *; test_channel_transform()"
 
@@ -46,9 +46,9 @@ sqlite3 $DBFILE "select * from headers"
   pixdecor.sh -d -c C1 -r C1_02-03 -s 201367065 -t ${K2PHOTFILES}/pixeltrans_C1_ch04.h5 
   ```
 
-## Examples ##
+## Examples
 
-### Running v0.5 on K2 C1 ###
+### Running v0.5 on K2 C1
 
 Use the `pixdecor.sh` function to run the complete photometric pipeline and transit search.
 
@@ -75,9 +75,9 @@ The development version runs here (note http as opposed to https)
 
 
 
-## Change Log ##
+## Change Log
 
-### v0.3 -> v0.4 ###
+### v0.3 -> v0.4
 
 Changes to current pipeline
 - New method of solving for orientation of spacecraft based on many
@@ -87,7 +87,7 @@ Changes to current pipeline
   of outliers provided a major advance in noise reduction. This is
   implemented in pixel_decorrelation4.py.
 
-### v0.2 -> v0.3 ###
+### v0.2 -> v0.3
 
 Changes to current pipeline:
 - flatfield.py solves for flatfield
@@ -98,16 +98,16 @@ New code (still experimental):
 - pointing.py (code to incorporate Tom B. pointing info)
 
 
-### v0.1 -> v0.2 ###
+### v0.1 -> v0.2
 - Location of the star is acquired by using the WCS headers to achieve an initial guess. Then we generate a synthetic image and register that image to the reference image to determine the correction to the WCS solution
 - Diagnostic plots show the positions of the stars according to the epic catalogs
 - dx,dy between frames is computed using subpixel registration
 
-## Old Examples ##
+## Old Examples
 Examples from previous runs of the code. Calls may be deprecated. Checkout the older versions to recover.
 
 
-### Running v0.3 on K2 C0 ###
+### Running v0.3 on K2 C0
 
 ```
 python flatfield.py --tmin 1940 --tmax 1972 <path to pixel .fits file> -d <output directory> <sqlite3 database file>
@@ -115,7 +115,7 @@ python pixel_decorrelation2.py --h5file <path to flatfield .ff.h5 file> <output 
 ```
 
 
-### Running v0.2 on K2 C0 ###
+### Running v0.2 on K2 C0
 ```
 . /global/homes/p/petigura/k2_setup.sh
 python pixel_decorrelation.py -f <path to pixel .fits file> --wcs=1 -r 4 --minrad=2 --maxrad=8 --verbose=1 --gausscen=0 --plotmode=gs --tmin=1940 --output=pobj,fits --xymeth=xcorr2D -s <output directory>
@@ -126,7 +126,7 @@ Notes:
 - `--wcs=1` Determines aperture center by using coordinates (after refinement)
 
 
-### Running v0.1 on K2 C0 ###
+### Running v0.1 on K2 C0
 
 ```
 python pixel_decorrelation.py -f <path to pixel .fits file> --wcs=1 -r 4 --minrad=2 --maxrad=8 --verbose=1 --gausscen=0 --plotmode=gs --tmin=1940 --output=2
