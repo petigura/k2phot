@@ -37,3 +37,4 @@
 #     thrustermask (bool): Thruster fire
 #     fdtmask (bool): Observation excluded from Gaussian process model
 #     fmask (bool): Observation ignored in transit search
+#
