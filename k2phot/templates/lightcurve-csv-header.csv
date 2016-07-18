@@ -1,0 +1,39 @@
+# Photometry of EPIC-{{ epic }}
+# 
+# Description
+# 
+#     This photometry was produced by Erik Petigura using the `k2phot`
+#     code. We used a stationary {{ npix }} pixel aperture to construct
+#     simple aperture photometry from the K2 target pixel file. Pixels
+#     included in the aperture are shown in the associated plot. We then
+#     modeled time- and position-dependent photometric variability. The
+#     size and shape of the aperture was chosen to minimize noise on
+#     three-hour timescales.
+# 
+# Attribution
+# 
+#     If you use this photometry, please cite
+# 
+#     1. Petigura et al. 2015, ApJ, 811, 102
+#     2. Aigrain et al. 2016, MNRAS, 459, 2408
+# 
+# Code Availability
+# 
+#     Public URL: https://github.com/petigura/k2phot
+#     Version: v1.0
+#     Git SHA: 0e63443fee2083618488daec2635a9d1af284731
+# 
+# Column Description
+# 
+#     t (float): Time [BJD_TDB]
+#     cad (int): Unique cadence number
+#     fbg (float): Background flux [e-/s/pixel]
+#     fsap (float): Simple aperture photometry [e-/s]
+#     fdt_t_rollmed (float): Flux after removing variability associated with
+#          pixel position [e-/s]
+#     fdt_t_roll_2D (float): Flux after removing variability associated with
+#          pixel position and time [e-/s]
+#     bgmask (bool): Outlier in background flux
+#     thrustermask (bool): Thruster fire
+#     fdtmask (bool): Observation excluded from Gaussian process model
+#     fmask (bool): Observation ignored in transit search
