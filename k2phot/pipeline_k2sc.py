@@ -164,7 +164,7 @@ def run(pixfn, lcfn, transfn, splits, tlimits=[-np.inf,np.inf], tex=None,
     row['to_fits'] = True
     row['fits_group'] = 'optimum'
     dfaper = dfaper.append(row, ignore_index=True)
-    print dfaper.sort('npix')['fits_group npix noise to_fits'.split()]
+    print dfaper.sort_values(by='npix')['fits_group npix noise to_fits'.split()]
 
     # Save and make diagnostic plots
     pipe.dfaper = dfaper
