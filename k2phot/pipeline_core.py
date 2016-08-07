@@ -66,9 +66,7 @@ class Pipeline(object):
 
         # Define skeleton light curve. This pandas DataFrame contains all
         # the columns that don't depend on which aperture is used.
-        im, x, y = imagestack.read_imagestack(
-            pixfn, tlimits=tlimits, tex=tex
-            )
+        im, x, y = imagestack.read_imagestack(pixfn, tlimits=tlimits, tex=tex)
 
         self.x = x
         self.y = y

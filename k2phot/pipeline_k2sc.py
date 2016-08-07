@@ -139,7 +139,8 @@ def run(pixfn, lcfn, transfn, splits, tlimits=[-np.inf,np.inf], tex=None,
     """
 
     pipe = PipelineK2SC(
-        pixfn,lcfn,transfn,splits,tlimits=tlimits, plot_backend=plot_backend
+        pixfn,lcfn,transfn,splits,tlimits=tlimits, plot_backend=plot_backend,
+        tex=tex
         )
     pipe.debug = debug
 
