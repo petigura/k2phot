@@ -33,8 +33,8 @@ def aperture(phot):
     ax = fig.add_subplot(131)
     plt.sca(ax)
     medframe(phot)
-    finderchart.dss(phot, survey='DSS1 Red', subplot_args=(132,))
-    finderchart.dss(phot, survey='DSS2 Red', subplot_args=(133,))
+    finderchart.dss(phot, survey='poss1_red', subplot_args=(132,))
+    finderchart.dss(phot, survey='poss2ukstu_red', subplot_args=(133,))
 
 def flux_position_scatter(lc0,thruster=False):
     """Plot K2 aperture on Kepler pixels and DSS"""
@@ -266,6 +266,7 @@ def lightcurve_segments(lc0):
 
         lc = lc_segments[i]
         lc = Lightcurve(lc)
+
         fm = lc.get_fm('fsap')
         ftnd = lc.get_fm('ftnd_t_roll_2D')
         
@@ -288,6 +289,7 @@ def lightcurve_segments(lc0):
     for i in range(nrows):
         plt.sca(ax0L[i])
         plt.legend(fontsize='x-small')
+
     fig.subplots_adjust(
         left=0.05, right=0.99, top=0.99, bottom=0.05, hspace=0.001, wspace=0.001
     )
