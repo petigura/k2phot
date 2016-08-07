@@ -3,12 +3,11 @@
 # Description
 # 
 #     This photometry was produced by Erik Petigura using the `k2phot`
-#     code. We used a stationary {{ npix }} pixel aperture to construct
-#     simple aperture photometry from the K2 target pixel file. Pixels
-#     included in the aperture are shown in the associated plot. We then
-#     modeled time- and position-dependent photometric variability. The
-#     size and shape of the aperture was chosen to minimize noise on
-#     three-hour timescales.
+#     code. We used a stationary {{ npix }} pixel aperture to
+#     construct simple aperture photometry from the K2 target pixel
+#     file. We then modeled time- and position-dependent photometric
+#     variability. The size and shape of the aperture was chosen to
+#     minimize noise on three-hour timescales.
 # 
 # Attribution
 # 
