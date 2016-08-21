@@ -31,10 +31,10 @@ class PipelineK2SC(Pipeline):
     :type tranfn: str
     """
     def __init__(self, pixfn, lcfn, transfn, splits, tlimits=[-np.inf,np.inf], 
-                 tex=None, plot_backend='.png',aper_custom=None):
+                 tex=None, plot_backend='.png',aper_custom=None, xy=None):
         super(PipelineK2SC,self).__init__(
             pixfn, lcfn, transfn, tlimits=tlimits,tex=tex, 
-            plot_backend=plot_backend, aper_custom=aper_custom
+            plot_backend=plot_backend, aper_custom=aper_custom,xy=xy
             )
 
         self.splits = splits
@@ -133,14 +133,14 @@ class PipelineK2SC(Pipeline):
 
    
 def run(pixfn, lcfn, transfn, splits, tlimits=[-np.inf,np.inf], tex=None, 
-             debug=False,plot_backend='.png', aper_custom=None):
+             debug=False,plot_backend='.png', aper_custom=None,xy=None):
     """
     Run the pixel decorrelation on pixel file
     """
 
     pipe = PipelineK2SC(
         pixfn,lcfn,transfn,splits,tlimits=tlimits, plot_backend=plot_backend,
-        tex=tex, aper_custom=aper_custom
+        tex=tex, aper_custom=aper_custom,xy=xy
         )
     pipe.debug = debug
 

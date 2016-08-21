@@ -52,7 +52,7 @@ class Pipeline(object):
     DEFAULT_AP_RADII = [1.5, 3, 8] 
 
     def __init__(self, pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], 
-                 tex=None, plot_backend='.png', aper_custom=None):
+                 tex=None, plot_backend='.png', aper_custom=None, xy=None):
         hduL = fits.open(pixfn)
         self.pixfn = pixfn
         self.lcfn = lcfn
@@ -68,10 +68,17 @@ class Pipeline(object):
         # Define skeleton light curve. This pandas DataFrame contains all
         # the columns that don't depend on which aperture is used.
         im, x, y = imagestack.read_imagestack(pixfn, tlimits=tlimits, tex=tex)
-
         self.x = x
         self.y = y
         self.im = im 
+        
+        if xy is not None:
+            x,y = xy.split(',')
+            x = float(x)
+            y = float(y)
+            self.x = x
+            self.y = y
+            
         medframe = im.get_medframe()
         medframe.fill_value = 0
         self.medframe = medframe.filled()
@@ -223,7 +230,6 @@ class Pipeline(object):
         """
 
         dfaper = []
-        import pdb;pdb.set_trace()
         aper_type, npix = self.aper_custom.split('-')
         npix = float(npix)
         aper = self.get_aperture(aper_type, npix)            
