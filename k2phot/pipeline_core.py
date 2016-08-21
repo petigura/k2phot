@@ -52,7 +52,7 @@ class Pipeline(object):
     DEFAULT_AP_RADII = [1.5, 3, 8] 
 
     def __init__(self, pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], 
-                 tex=None, plot_backend='.png'):
+                 tex=None, plot_backend='.png', aper_custom=None):
         hduL = fits.open(pixfn)
         self.pixfn = pixfn
         self.lcfn = lcfn
@@ -63,6 +63,7 @@ class Pipeline(object):
         self.basename = os.path.splitext(lcfn)[0]
         self.starname = os.path.basename(self.basename)
         self.im_header = hduL[1].header
+        self.aper_custom = aper_custom
 
         # Define skeleton light curve. This pandas DataFrame contains all
         # the columns that don't depend on which aperture is used.
@@ -150,8 +151,8 @@ class Pipeline(object):
     def _get_dfaper_row(self, aper=None):
         """Return an empty dictionary to store info from aperture scan"""
         d = dict(
-            aper=None,  npix=None, to_fits=False, 
-            fits_group='', phot=None, noise=None,
+            aper=None,  npix=None, to_fits=False, fits_group='', phot=None, 
+            noise=None,
             )
         if aper==None:
             return d
@@ -213,6 +214,22 @@ class Pipeline(object):
                 return dfaper
 
             i += 1
+
+        return dfaper
+
+    def get_dfaper_custom(self):
+        """
+        Get default values of dfaper. Returns list of dictionaries
+        """
+
+        dfaper = []
+        import pdb;pdb.set_trace()
+        aper_type, npix = self.aper_custom.split('-')
+        npix = float(npix)
+        aper = self.get_aperture(aper_type, npix)            
+        d = self._get_dfaper_row(aper=aper)
+        d['to_fits'] = True
+        dfaper.append(d)
 
         return dfaper
 
@@ -318,7 +335,6 @@ class Pipeline(object):
             from matplotlib import pylab as plt
             plt.ion()
             plt.figure()
-            import pdb;pdb.set_trace()
 
         _phot = phot.read_fits(self.lcfn,'optimum')
         with self.FigureManager('_0-aperture'):

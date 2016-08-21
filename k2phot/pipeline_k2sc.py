@@ -31,10 +31,10 @@ class PipelineK2SC(Pipeline):
     :type tranfn: str
     """
     def __init__(self, pixfn, lcfn, transfn, splits, tlimits=[-np.inf,np.inf], 
-                 tex=None, plot_backend='.png'):
+                 tex=None, plot_backend='.png',aper_custom=None):
         super(PipelineK2SC,self).__init__(
             pixfn, lcfn, transfn, tlimits=tlimits,tex=tex, 
-            plot_backend=plot_backend,
+            plot_backend=plot_backend, aper_custom=aper_custom
             )
 
         self.splits = splits
@@ -133,14 +133,14 @@ class PipelineK2SC(Pipeline):
 
    
 def run(pixfn, lcfn, transfn, splits, tlimits=[-np.inf,np.inf], tex=None, 
-             debug=False,plot_backend='.png'):
+             debug=False,plot_backend='.png', aper_custom=None):
     """
     Run the pixel decorrelation on pixel file
     """
 
     pipe = PipelineK2SC(
         pixfn,lcfn,transfn,splits,tlimits=tlimits, plot_backend=plot_backend,
-        tex=tex
+        tex=tex, aper_custom=aper_custom
         )
     pipe.debug = debug
 
@@ -148,19 +148,27 @@ def run(pixfn, lcfn, transfn, splits, tlimits=[-np.inf,np.inf], tex=None,
     ap = pipe.get_aperture_guess()
     pipe.k2sc(ap)
 
-    # Photometry with circular apertures
-    dfaper_default = pipe.get_dfaper_default()
-    dfaper_default = pipe.aperture_scan(dfaper_default)
+    if aper_custom is None:
+        # Photometry with circular apertures
+        dfaper_default = pipe.get_dfaper_default()
+        dfaper_default = pipe.aperture_scan(dfaper_default)
 
-    # Photometry with region apertures
-    dfaper_scan = pipe.get_dfaper_scan()
-    dfaper_scan = pipe.aperture_scan(dfaper_scan)
-    dfaper_scan = pipe.aperture_polish(dfaper_scan)
+        # Photometry with region apertures
+        dfaper_scan = pipe.get_dfaper_scan()
+        dfaper_scan = pipe.aperture_scan(dfaper_scan)
+        dfaper_scan = pipe.aperture_polish(dfaper_scan)
 
-    # Find optimal region aperture
-    dfaper = dfaper_default + dfaper_scan
-    dfaper = pd.DataFrame(dfaper)
-    idx = dfaper[dfaper.fits_group.str.contains('region')].noise.idxmin()
+        # Find optimal region aperture
+        dfaper = dfaper_default + dfaper_scan
+        dfaper = pd.DataFrame(dfaper)
+        idx = dfaper[dfaper.fits_group.str.contains('region')].noise.idxmin()
+    else:
+        # Photometry with circular apertures
+        dfaper = pipe.get_dfaper_custom()
+        dfaper = pipe.aperture_scan(dfaper)
+        dfaper = pd.DataFrame(dfaper)
+        idx = 0 # only include one aperture
+    
     row = dfaper.loc[idx].copy()
     row['to_fits'] = True
     row['fits_group'] = 'optimum'
