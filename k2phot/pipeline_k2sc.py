@@ -173,6 +173,10 @@ def run(pixfn, lcfn, transfn, splits, tlimits=[-np.inf,np.inf], tex=None,
     row['to_fits'] = True
     row['fits_group'] = 'optimum'
     dfaper = dfaper.append(row, ignore_index=True)
+    # Hack to get around sit where noise was not compute
+    print "{} aperture sizes".format(len(dfaper))
+    dfaper = dfaper.dropna()
+    print "{} aperture sizes (notnull)".format(len(dfaper))
     print dfaper.sort_values(by='npix')['fits_group npix noise to_fits'.split()]
 
     # Save and make diagnostic plots
