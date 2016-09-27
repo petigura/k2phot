@@ -231,7 +231,10 @@ def check_masked(func):
             "Must pass in masked array"
         r = func(arr)
         if isinstance(r,np.ndarray):
-            r = float(r[0])
+            if r.ndim==0:
+                r = float(r)
+            elif r.ndim==1:
+                r = float(r[0])
         return r
     return wrapped
 
