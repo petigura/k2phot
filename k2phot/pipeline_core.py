@@ -349,8 +349,9 @@ class Pipeline(object):
         with self.FigureManager('_1-background'):
             plotting.phot.background(_phot)
 
-        with self.FigureManager('_2-noise_vs_aperture_size'):
-            plotting.pipeline.noise_vs_aperture_size(self)
+        if len(self.dfaper.npix.drop_duplicates()) > 1:
+            with self.FigureManager('_2-noise_vs_aperture_size'):
+                plotting.pipeline.noise_vs_aperture_size(self)
 
         with self.FigureManager("_3-fdt_t_roll_2D"):
             plotting.phot.detrend_t_roll_2D(_phot)
