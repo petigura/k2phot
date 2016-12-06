@@ -52,7 +52,7 @@ class Pipeline(object):
     DEFAULT_AP_RADII = [1.5, 3, 8] 
 
     def __init__(self, pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], 
-                 tex=None, plot_backend='.png'):
+                 tex=None, plot_backend='.png', aper_custom=None, xy=None):
         hduL = fits.open(pixfn)
         self.pixfn = pixfn
         self.lcfn = lcfn
@@ -63,16 +63,22 @@ class Pipeline(object):
         self.basename = os.path.splitext(lcfn)[0]
         self.starname = os.path.basename(self.basename)
         self.im_header = hduL[1].header
+        self.aper_custom = aper_custom
 
         # Define skeleton light curve. This pandas DataFrame contains all
         # the columns that don't depend on which aperture is used.
-        im, x, y = imagestack.read_imagestack(
-            pixfn, tlimits=tlimits, tex=tex
-            )
-
+        im, x, y = imagestack.read_imagestack(pixfn, tlimits=tlimits, tex=tex)
         self.x = x
         self.y = y
         self.im = im 
+        
+        if xy is not None:
+            x,y = xy.split(',')
+            x = float(x)
+            y = float(y)
+            self.x = x
+            self.y = y
+            
         medframe = im.get_medframe()
         medframe.fill_value = 0
         self.medframe = medframe.filled()
@@ -152,8 +158,8 @@ class Pipeline(object):
     def _get_dfaper_row(self, aper=None):
         """Return an empty dictionary to store info from aperture scan"""
         d = dict(
-            aper=None,  npix=None, to_fits=False, 
-            fits_group='', phot=None, noise=None,
+            aper=None,  npix=None, to_fits=False, fits_group='', phot=None, 
+            noise=None,
             )
         if aper==None:
             return d
@@ -215,6 +221,21 @@ class Pipeline(object):
                 return dfaper
 
             i += 1
+
+        return dfaper
+
+    def get_dfaper_custom(self):
+        """
+        Get default values of dfaper. Returns list of dictionaries
+        """
+
+        dfaper = []
+        aper_type, npix = self.aper_custom.split('-')
+        npix = float(npix)
+        aper = self.get_aperture(aper_type, npix)            
+        d = self._get_dfaper_row(aper=aper)
+        d['to_fits'] = True
+        dfaper.append(d)
 
         return dfaper
 
@@ -320,7 +341,6 @@ class Pipeline(object):
             from matplotlib import pylab as plt
             plt.ion()
             plt.figure()
-            import pdb;pdb.set_trace()
 
         _phot = phot.read_fits(self.lcfn,'optimum')
         with self.FigureManager('_0-aperture'):
@@ -329,8 +349,9 @@ class Pipeline(object):
         with self.FigureManager('_1-background'):
             plotting.phot.background(_phot)
 
-        with self.FigureManager('_2-noise_vs_aperture_size'):
-            plotting.pipeline.noise_vs_aperture_size(self)
+        if len(self.dfaper.npix.drop_duplicates()) > 1:
+            with self.FigureManager('_2-noise_vs_aperture_size'):
+                plotting.pipeline.noise_vs_aperture_size(self)
 
         with self.FigureManager("_3-fdt_t_roll_2D"):
             plotting.phot.detrend_t_roll_2D(_phot)

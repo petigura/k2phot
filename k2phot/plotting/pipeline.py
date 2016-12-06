@@ -5,9 +5,9 @@ from .config import *
 
 def noise_vs_aperture_size(pipe):
     dfaper = pipe.dfaper
-    dmin = dfaper.sort('noise').iloc[0]
+    dmin = dfaper.sort_values(by='noise').iloc[0]
     dfaper = dfaper[dfaper.fits_group.str.contains('region')]
-    dfaper = dfaper.sort('npix')
+    dfaper = dfaper.sort_values(by='npix')
     
     plt.semilogy()
     plt.plot(dfaper['npix'],dfaper['noise'],'o-')
