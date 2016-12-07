@@ -33,7 +33,7 @@ def exofop(run, starname, plots=False, lc=True):
             f.writelines(s)
             lcout.to_csv(f,index=False,float_format="%.6f")
 
-        print "cfop: created: {}".format(csvfn)
+        print "created: {}".format(csvfn)
             
     if plots:
         pnglist = []
@@ -45,7 +45,7 @@ def exofop(run, starname, plots=False, lc=True):
 
         pngfn = "{}/{}_5-fdt_t_rollmed.png".format(outdir,starname)
         pnglist.append(pngfn)
-        k2phot.plotting.phot.detrend_t_rollmed(phot)
+        k2phot.plotting.phot.detrend_t_rollmed(phot, zoom=True)
         plt.gcf().savefig(pngfn,dpi=160)
         plt.close()
 
@@ -54,4 +54,4 @@ def exofop(run, starname, plots=False, lc=True):
         cmd = 'convert ' + " ".join(files)
         print cmd
         os.system(cmd)
-        print "cfop: created: {}".format(pdffn)
+        print "created: {}".format(pdffn)

@@ -122,9 +122,9 @@ def lightcurve_detrend_t_roll_2D(lc,zoom=False):
     plt.legend(**legkw)
     lightcurve_masks(lc)
 
-def lightcurve_detrend_t_rollmed(lc,zoom=False):
+def lightcurve_detrend_t_rollmed(lc,**kwargs):
     keys = 'fsap ftnd_t_rollmed fdt_t_rollmed'.split()
-    flines, ftndlines, fdtlines = lightcurve_detrend(lc,keys)
+    flines, ftndlines, fdtlines = lightcurve_detrend(lc,keys,**kwargs)
     
     # Label Axes
     axL = plt.gcf().get_axes()
@@ -162,23 +162,24 @@ def detrend(t,f,ftnd,fdt):
     fig.set_tight_layout(True)
     return flines, ftndlines, fdtlines 
 
-def lightcurve_detrend(lc,keys,zoom=False):
+def lightcurve_detrend(lc, keys, zoom=False):
     lc = Lightcurve(lc)
     t = lc['t']
     if min(t) > 2e6:
         t -= bjd0
 
-    f,ftnd,fdt = [lc.get_col(col,norm=True,maskcol='fmask') for col in keys]
+    f, ftnd, fdt = [lc.get_col(col,norm=True,maskcol='fmask') for col in keys]
 
-    lines = detrend(t,f,ftnd,fdt)
-    yl = roblims(ftnd.compressed(),5,2)
+    lines = detrend(t, f, ftnd, fdt)
+    yl = roblims(ftnd.compressed(), 5, 1)
     if zoom:
-        yl = roblims(fdt.compressed(),5,2)        
+        yl = roblims(fdt.compressed(), 5, 1)        
+
     plt.ylim(*yl)
 
     medkeys = [keys[0],keys[2]]
     axL = plt.gcf().get_axes()
-    for ax,medkey in zip(axL,medkeys):
+    for ax, medkey in zip(axL ,medkeys):
         ax2 = ax.twin() 
         yt = ax.get_yticks() # Get values of the left y-axis
         ax2.set_yticks(yt) # Copy into the right y-axis
@@ -201,7 +202,7 @@ def lightcurve_detrend(lc,keys,zoom=False):
     return lines
 
 
-def roblims(x,p,fac):
+def roblims(x, p, fac):
     """
     Robust Limits
 
@@ -213,8 +214,9 @@ def roblims(x,p,fac):
     p : percentile (compared to 50) to use as lower limit
     fac : add some space
     """
-    plo,pmed,phi = np.percentile(x,[p,50,100-p])
-    lim = plo - (pmed-plo) * fac, phi + (phi-pmed) * fac
+    plo, pmed, phi = np.percentile(x,[p,50,100-p])
+    span = phi - plo
+    lim = plo - span * fac, phi + span * fac
     return lim
 
 def lightcurve_masks(lc):

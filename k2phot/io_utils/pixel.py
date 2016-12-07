@@ -8,6 +8,7 @@ import numpy as np
 from numpy import ma
 import pandas as pd
 import k2_catalogs
+import warnings
 
 bitdesc = {
     1 : "Attitude Tweak",
@@ -27,7 +28,7 @@ bitdesc = {
     15 : "LDE parity error triggers a flag"
 }
 
-bitdesc  = pd.Series(bitdesc)
+bitdesc = pd.Series(bitdesc)
 
 def loadPixelFile(fn, tlimits=None, bjd0=2454833, tex=None):
     """
@@ -54,6 +55,7 @@ def loadPixelFile(fn, tlimits=None, bjd0=2454833, tex=None):
     # 2014-08-27 16:23 IJMC: Created
     # 2014-09-08 09:59 IJMC: Updated for K2 C0 data: masks.
     # 2014-09-08 EAP: Pass around data with record arrays
+    warnings.filterwarnings("ignore", category=RuntimeWarning)
 
     if tlimits is None:
         mintime, maxtime = -np.inf, np.inf
