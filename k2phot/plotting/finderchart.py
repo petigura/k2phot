@@ -3,6 +3,7 @@ Module for downloading dss images and displaying apertures
 """
 from astropy.io import fits
 import astropy
+import astropy.wcs
 import k2phot.phot
 
 import xml.etree.ElementTree as etree
