@@ -11,6 +11,7 @@ from matplotlib import pylab as plt
 from numpy import ma
 from scipy.optimize import minimize
 
+import batman
 import phot
 import imagestack 
 import apertures
