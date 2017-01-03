@@ -52,7 +52,8 @@ class Pipeline(object):
     DEFAULT_AP_RADII = [1.5, 3, 8] 
 
     def __init__(self, pixfn, lcfn, transfn, tlimits=[-np.inf,np.inf], 
-                 tex=None, plot_backend='.png', aper_custom=None, xy=None):
+                 tex=None, plot_backend='.png', aper_custom=None, xy=None,
+                transitParams=None, transitArgs=None):
         hduL = fits.open(pixfn)
         self.pixfn = pixfn
         self.lcfn = lcfn
@@ -64,6 +65,8 @@ class Pipeline(object):
         self.starname = os.path.basename(self.basename)
         self.im_header = hduL[1].header
         self.aper_custom = aper_custom
+        self.transitParams = transitParams
+        self.transitArgs = transitArgs
 
         # Define skeleton light curve. This pandas DataFrame contains all
         # the columns that don't depend on which aperture is used.
@@ -117,6 +120,22 @@ class Pipeline(object):
         trans['roll'] = trans['theta'] * 2e5
 
         lc['fsap'] = self.im.get_sap_flux()
+        
+        #################################################
+        # IJMC_edits
+        # per, t0, rp, a, inc, ecc, w
+        tranparams = 'per', 't0', 'rp', 'a', 'inc', 'ecc', 'w'  #dict(per=per, t0=t0, rp=rp, a=a, inc=inc, ecc=ecc, w=w)
+        if self.transitParams is not None:
+            batParams = batman.TransitParams()
+            for key in tranparams:   setattr(batParams, key, self.transitParams[key])
+            m = batman.TransitModel(batParams, lc.t.values,
+                       supersample_factor=self.transitArgs['supersample_factor'],
+                       exp_time=self.transitArgs['exp_time'])    #numint, ninterval/86400.)
+            new_signal = m.light_curve(batParams)
+            lc['fsap'] *= new_signal
+        ##################################################
+
+        
         norm = Normalizer(lc['fsap'].median())
         lc['f'] = norm.norm(lc['fsap'])
 
