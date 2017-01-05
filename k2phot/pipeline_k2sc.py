@@ -33,10 +33,11 @@ class PipelineK2SC(Pipeline):
     def __init__(self, pixfn, lcfn, transfn, splits, tlimits=[-np.inf,np.inf], 
                  tex=None, plot_backend='.png',aper_custom=None, xy=None,
                  transitParams=None, transitArgs=None):
+        #import pdb; pdb.set_trace()
         super(PipelineK2SC,self).__init__(
             pixfn, lcfn, transfn, tlimits=tlimits,tex=tex, 
             plot_backend=plot_backend, aper_custom=aper_custom,xy=xy,
-            transitParams=None, transitArgs=None
+            transitParams=transitParams, transitArgs=transitArgs 
             )
 
         self.splits = splits
@@ -143,7 +144,7 @@ def run(pixfn, lcfn, transfn, splits, tlimits=[-np.inf,np.inf], tex=None,
 
     pipe = PipelineK2SC(
         pixfn,lcfn,transfn,splits,tlimits=tlimits, plot_backend=plot_backend,
-        tex=tex, aper_custom=aper_custom,xy=xy, transitParams=None, transitArgs=None
+        tex=tex, aper_custom=aper_custom,xy=xy, transitParams=transitParams, transitArgs=transitArgs 
     )
     pipe.debug = debug
 
