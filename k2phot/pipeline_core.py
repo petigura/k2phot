@@ -121,7 +121,7 @@ class Pipeline(object):
         trans['roll'] = trans['theta'] * 2e5
 
         lc['fsap'] = self.im.get_sap_flux()
-        
+        #import pdb; pdb.set_trace() 
         #################################################
         # IJMC_edits
         # per, t0, rp, a, inc, ecc, w
@@ -129,6 +129,18 @@ class Pipeline(object):
         if self.transitParams is not None:
             batParams = batman.TransitParams()
             for key in tranparams:   setattr(batParams, key, self.transitParams[key])
+            #import pdb; pdb.set_trace()
+            batParams.u = [0.0]
+            limb_dark = 'uniform'
+            if self.transitParams.has_key('ld1'):
+                batParams.u[0] = float(self.transitParams['ld1']) 
+                limb_dark = 'linear'
+            if self.transitParams.has_key('ld2'):
+                batParams.u.append(float(self.transitParams['ld2']))
+                limb_dark = 'quadratic'
+
+            batParams.limb_dark = limb_dark 
+            #import pdb; pdb.set_trace()
             m = batman.TransitModel(batParams, lc.t.values,
                        supersample_factor=self.transitArgs['supersample_factor'],
                        exp_time=self.transitArgs['exp_time'])    #numint, ninterval/86400.)
@@ -471,7 +483,6 @@ def white_noise_estimate(kepmag):
     sigma_th *= fac
     sigma_th = max(noise_floor,sigma_th)
     return sigma_th
-
 
 
 
