@@ -32,6 +32,14 @@ k2cat_h5file = os.path.join(K2PHOTFILES,'catalogs/k2_catalogs.h5')
 MAST_CATALOGS = os.path.join(K2PHOTFILES,'mast_catalogs/')
 TARGET_LISTS = os.path.join(K2PHOTFILES,'target_lists/')
 
+
+# Rough rectilinear cuts in ra and dec around the campaigns to query subsets of the catalos
+k2_camp_coord_query = {
+    'C14':'151 < ra < 171 and -3 < dec < 17',
+    'C15':'222 < ra < 242 and -30 < dec < -10',
+    'C16':'125 < ra < 145 and 7< dec < 27',
+}
+
 def read_mast_cat(k2_camp,debug=False):
     """
     Read catalogs using the formats specified in the MAST
@@ -83,6 +91,7 @@ C10 README_d15076_02_epic_c10_dmc d15076_02_epic_c10_dmc.mrg.gz
 C11 README_d15332_01_epic_c11_dmc d15332_01_epic_c11_dmc.mrg.gz
 C12 README_d15332_02_epic_c12_dmc d15332_02_epic_c12_dmc.mrg.gz
 C13 README_d15332_03_epic_c13_dmc d15332_03_epic_c13_dmc.mrg.gz
+CXX README_epic k2_epic_Sep_2016.csv.gz
 """
 filenames = pd.read_table(sio(s),sep='\s',index_col=0, engine='python')
 
@@ -123,6 +132,19 @@ def query_epic(k2_camp,epic):
     return df
 
 def read_epic(k2_camp,debug=False):
+    """Read EPIC
+
+    Upon initial instantiation, will read in EPIC catalog as given in
+    the MAST.  And save a memory efficent version as an h5
+    format. Reading in the 2GB file takes about 10min on my laptop and
+    uses a lot of memory.
+
+    Args:
+        k2_camp (str): string identifier for K2 campaign.
+        debug (bool): reads in only a small subset of the gzipped array
+
+    """
+
     hdfpath = os.path.join(MAST_CATALOGS,k2_camp+'.hdf')
     if os.path.exists(hdfpath):
         cat = pd.read_hdf(hdfpath,k2_camp)
@@ -152,9 +174,15 @@ def read_epic(k2_camp,debug=False):
     else:
         nrows = None
 
+    if k2_camp=="CXX":
+        skiprows=1
+    else:
+        skiprows=None
+
+
     cat = pd.read_table(
         reader.catalogfn, sep='|', names=cut.newname, header=None, 
-        usecols=usecols, compression='gzip', nrows=nrows
+        usecols=usecols, compression='gzip', nrows=nrows, skiprows=skiprows
         )
     if debug:
         return cat
@@ -172,13 +200,18 @@ def read_epic_composite(k2_camp):
         catalogs = 'C3 C12'.split()
     if k2_camp=='C13':
         catalogs='C4 C13'.split()
+    if k2_camp_int >= 14:
+        catalogs = ['CXX']
 
     cat = []
     for catalog in catalogs:
-
         print "reading catalog {}".format(catalog)
         cat+=[read_epic(catalog)]
     cat = pd.concat(cat)
+
+    if k2_camp_int >= 14:
+        cat = cat.query(k2_camp_coord_query[k2_camp])
+    
     return cat
         
 
