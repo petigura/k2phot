@@ -214,7 +214,7 @@ class Pipeline(object):
         dfaper = copy.deepcopy(dfaper0)
 
         dfaper = pd.DataFrame(dfaper)
-        dfaper = dfaper.sort('npix')
+        dfaper = dfaper.sort_values(by='npix')
         dfaper.index = range(len(dfaper))
 
         # Check to see if best aperture is bounded on both sides. If
