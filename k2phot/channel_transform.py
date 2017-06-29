@@ -129,7 +129,14 @@ def fits_to_chip_centroid(fitsfile):
     # Define rectangular aperture
     wcs = get_wcs(fitsfile)
     ra,dec = hdu0.header['RA_OBJ'],hdu0.header['DEC_OBJ']
-    x,y = wcs.wcs_world2pix(ra,dec,0)
+    try:
+        x,y = wcs.wcs_world2pix(ra,dec,0)
+    except: # if WCS is bogus, make the simplest reasonable assumption
+        x, y = ncol/2., nrow/2.
+        
+    if x<0 or x>ncol-1: x = ncol/2.
+    if y<0 or y>ncol-1: y = ncol/2.
+
     scentx,scenty = np.round([x,y]).astype(int)
     nrings = (apsize-1)/2
 
