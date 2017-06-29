@@ -55,8 +55,8 @@ class ImageStack(object):
         if x>self.headers[2]['NAXIS1']-1 or x<0: x = self.headers[2]['NAXIS1']/2.
         if y>self.headers[2]['NAXIS2']-1. or y<0: y =self.headers[2]['NAXIS2']/2.
             
-        x = float(x)
-        y = float(y)
+        x = int(x)
+        y = int(y)
         return x,y
 
     def set_fbackground(self):
