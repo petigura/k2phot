@@ -46,7 +46,15 @@ class ImageStack(object):
         
         wcs = get_wcs(self.pixfile)
         ra,dec = self.headers[0]['RA_OBJ'],self.headers[0]['DEC_OBJ']
-        x,y = wcs.wcs_world2pix(ra,dec,0)
+        try:
+            x,y = wcs.wcs_world2pix(ra,dec,0)
+        except: # in case WCS is bad (e.g. kadenza-generated target pixel files)
+            x, y = self.headers[2]['NAXIS1']/2., self.headers[2]['NAXIS2']/2.
+        
+        # If x,y are bogus, make the simplest reasonable assumption:
+        if x>self.headers[2]['NAXIS1']-1 or x<0: x = self.headers[2]['NAXIS1']/2.
+        if y>self.headers[2]['NAXIS2']-1. or y<0: y =self.headers[2]['NAXIS2']/2.
+            
         x = float(x)
         y = float(y)
         return x,y
