@@ -154,6 +154,9 @@ def fits_to_chip_centroid(fitsfile):
     flux_sky_mask += mask[np.newaxis,:,:].astype(bool)
     flux_sky = ma.masked_array(flux_sky, flux_sky_mask)
     fbg = ma.median(flux_sky.reshape(flux.shape[0],-1),axis=1)
+    if not np.isfinite(fbg).any(): # This happened for C11, not sure why
+        fbg2 = [ma.median(frame[np.isfinite(frame)]) for frame in flux_sky.reshape(flux.shape[0], -1)]
+        fbg = ma.masked_array(fbg2, np.isnan(fbg2))
 
     # Subtract off background
     flux = flux - fbg[:,np.newaxis,np.newaxis]
