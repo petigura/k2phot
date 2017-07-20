@@ -188,3 +188,4 @@ def run(pixfn, lcfn, transfn, splits, tlimits=[-np.inf,np.inf], tex=None,
     pipe.to_fits(pipe.lcfn)
     pipe.plot_diagnostics()
 
+

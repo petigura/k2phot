@@ -34,7 +34,7 @@ def exofop(run, starname, plots=False, lc=True):
             lcout.to_csv(f,index=False,float_format="%.6f")
 
         print "created: {}".format(csvfn)
-            
+
     if plots:
         pnglist = []
         pngfn = "{}/{}_0-aperture.png".format(outdir,starname)
@@ -49,7 +49,7 @@ def exofop(run, starname, plots=False, lc=True):
         plt.gcf().savefig(pngfn,dpi=160)
         plt.close()
 
-        pdffn = "{}/{}.pdf".format(outdir,starname)
+        pdffn = "{}/{}_plots-exofop.pdf".format(outdir,starname)
         files = pnglist + [pdffn]
         cmd = 'convert ' + " ".join(files)
         print cmd
