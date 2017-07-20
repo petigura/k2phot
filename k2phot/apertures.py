@@ -133,7 +133,7 @@ def connected_pixels_order(im0, locx, locy):
                         [0, 1, 0]])
     weights = weights.astype(float)
     weights /= np.sum(weights)
-
+    print locx, locy 
     locr, locc = np.round(locy), np.round(locx)
 
     # Mask is the aperture mask
