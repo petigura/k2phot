@@ -248,11 +248,13 @@ def read_cat_campaign(k2_camp,return_targets=True):
     k2_camp : K2 Campaign 
     """
 
-    print "reading in catalog for %s from %s " % (k2_camp, k2cat_h5file)
-    cat = pd.read_hdf(k2cat_h5file,k2_camp)
+    uri = 'sqlite:///{}'.format(k2cat_sqlfile)
+    print "{}, {}".format(k2_camp, uri)
+    with sqlite3.connect(k2cat_sqlfile) as con:
+        cat = pd.read_sql(k2_camp,uri)
     cat['k2_camp'] = k2_camp
-    if return_targets:
-        cat = cat[cat.target]
+    cat.index=cat.epic
+    print "{} rows".format(len(cat))
     return cat
 
 
