@@ -322,7 +322,7 @@ def make_k2_catalog(k2_camp):
 
     print "Dumping convenience database to %s, %s" % (k2cat_sqlfile,k2_camp)
     con = sqlite3.connect(k2cat_sqlfile)
-    df = df[df.target]
+    df = df[df.target.astype(bool)]
     df.to_sql(k2_camp,con,if_exists='replace',index=False)
     print df.info()
 
