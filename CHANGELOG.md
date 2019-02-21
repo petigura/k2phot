@@ -2,6 +2,22 @@
 
 Probably irrelevant now
 
+### Running v0.5 on K2 C1
+
+Use the `pixdecor.sh` function to run the complete photometric pipeline and transit search.
+
+  ```
+  pixdecor.sh -c C1 -r C1_02-03 -s 201367065 -t ${K2PHOTFILES}/pixeltrans_C1_ch04.h5 
+  ```
+
+flags
+
+- `-d` run in debug mode (shorter versions of all the code)
+- `-c` which K2 campaign are we working with? 
+- `-s` what is the starname?
+- `-t` with pixel-transformation file do we use?
+
+
 ### v0.3 -> v0.4
 
 Changes to current pipeline
