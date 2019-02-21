@@ -51,7 +51,7 @@ Running the pipeline on C5 data
    k2phot.plotting.phot.lightcurve_segments(phot.lc)   
    ```
 
-   !(https://lh3.googleusercontent.com/vFg_-jws-jkHMDJQmaR2_DUck9uz_LLKreodPwPHnV0fMOr8sNre0Lbqo_UUXrR9yK6smBOy5dM_hbxL1sCBn2eivBzYfLfrCm0_14Pc3nAxhjraBaWaTb59dSLoyEE4hjT3iJiy)
+   ![transformation](https://user-images.githubusercontent.com/694371/53199292-8b1fcf00-35d3-11e9-8cb3-814d5aafec22.png)
 
 1. If statisfied, run the photometric pipeline with. There are two decorrelation algorithms to use, we recommend k2sc
    ```python 
