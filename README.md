@@ -20,7 +20,9 @@ Tested with Python v2.7.3, 2.7.6, 2.7.8
 - george (requires eigen) complicated install, consult evernote
 
 
-## Example running the pipeline on C5
+## Example
+
+Running the pipeline on C5 data
 
 1. Download pixel data
 
